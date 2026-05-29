@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Steam 玩伴探测</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800;900;950&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #f4f7fc;
+  --card: #ffffff;
+  --surface: #f8fafc;
+  --brand-primary: #ff5e62;
+  --brand-secondary: #3b82f6;
+  --brand-success: #10b981;
+  --brand-yellow: #fbc531;
+  --brand-purple: #8c7ae6;
+  --text: #1e293b;
+  --text-dim: #64748b;
+  --text-muted: #94a3b8;
+  --border-thick: #0f172a;
+  --danger: #ef4444;
+  --shadow-bento: 6px 6px 0px var(--border-thick);
+  --shadow-btn: 4px 4px 0px var(--border-thick);
+  --shadow-pop: 8px 8px 0px var(--border-thick);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  background: var(--bg);
+  background-image: radial-gradient(rgba(15, 23, 42, 0.08) 2px, transparent 2px);
+  background-size: 28px 28px;
+  color: var(--text);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  padding-bottom: 80px;
+}
+
+.app-container {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 60px 24px;
+}
+
+.header {
+  text-align: center;
+  margin-bottom: 50px;
+  position: relative;
+}
+
+.header-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 20px;
+  background: var(--brand-yellow);
+  border: 2.5px solid var(--border-thick);
+  color: var(--border-thick);
+  border-radius: 30px 10px 30px 30px;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  margin-bottom: 20px;
+  transform: rotate(-3deg) scale(1.05);
+  box-shadow: 3px 3px 0px var(--border-thick);
+}
+
+.header h1 {
+  font-size: 44px;
+  font-weight: 900;
+  color: var(--border-thick);
+  letter-spacing: -1.5px;
+  margin-bottom: 14px;
+}
+
+.header-desc {
+  font-size: 16px;
+  color: var(--text-dim);
+  max-width: 560px;
+  margin: 0 auto;
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+.config-panel {
+  background: var(--card);
+  border: 3px solid var(--border-thick);
+  border-radius: 32px 32px 32px 16px;
+  padding: 36px;
+  margin-bottom: 40px;
+  box-shadow: var(--shadow-bento);
+  position: relative;
+}
+
+.config-row { display: flex; gap: 24px; align-items: flex-start; }
+.config-group { flex: 1; }
+
+.config-group label {
+  display: block;
+  font-size: 14px;
+  font-weight: 900;
+  color: var(--border-thick);
+  margin-bottom: 14px;
+  letter-spacing: 0.5px;
+}
+
+.config-group input {
+  width: 100%;
+  padding: 18px 22px;
+  background: #ffffff;
+  border: 3px solid var(--border-thick);
+  border-radius: 18px;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 700;
+  transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.config-group input:focus {
+  outline: none;
+  background: #fffef2;
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0px var(--brand-secondary);
+}
+
+.config-group .hint {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-top: 16px;
+  line-height: 1.6;
+}
+.config-group .hint a {
+  color: var(--brand-secondary);
+  text-decoration: none;
+  font-weight: 800;
+  box-shadow: 0 2px 0px var(--brand-secondary);
+}
+
+.btn {
+  padding: 18px 40px;
+  border: 3px solid var(--border-thick);
+  border-radius: 18px;
+  font-size: 16px;
+  font-weight: 900;
+  cursor: pointer;
+  transition: all 0.15s cubic-bezier(0.175, 0.885, 0.32, 1);
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-primary {
+  background: var(--brand-primary);
+  color: #fff;
+  box-shadow: var(--shadow-btn);
+}
+.btn-primary:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0px var(--border-thick);
+}
+.btn-primary:active {
+  transform: translate(4px, 4px);
+  box-shadow: 0px 0px 0px var(--border-thick);
+}
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
+
+.btn-share {
+  background: var(--border-thick);
+  color: #fff;
+  box-shadow: var(--shadow-btn);
+}
+.btn-share:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0px var(--border-thick);
+}
+.btn-share:active {
+  transform: translate(4px, 4px);
+  box-shadow: 0px 0px 0px var(--border-thick);
+}
+
+.toast {
+  position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
+  padding: 16px 32px; background: var(--border-thick); color: #fff;
+  border-radius: 16px; font-weight: 900; font-size: 15px;
+  border: 3px solid var(--border-thick);
+  box-shadow: 8px 8px 0px rgba(0,0,0,0.12);
+  z-index: 9999; opacity: 0; transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+.toast.show { opacity: 1; }
+
+.btn-ghost {
+  background: #ffffff;
+  color: var(--border-thick);
+  box-shadow: 3px 3px 0px var(--border-thick);
+}
+.btn-ghost:hover {
+  background: var(--surface);
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0px var(--border-thick);
+}
+
+.tabs {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 40px;
+  background: #e2e8f0;
+  border: 3px solid var(--border-thick);
+  border-radius: 100px;
+  padding: 6px;
+  max-width: 400px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.tab-btn {
+  flex: 1;
+  padding: 14px 24px;
+  background: transparent;
+  border: none;
+  border-radius: 100px;
+  color: var(--border-thick);
+  font-size: 15px;
+  font-weight: 900;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.tab-btn.active {
+  background: #ffffff;
+  color: var(--brand-primary);
+  border: 2.5px solid var(--border-thick);
+  transform: scale(1.04);
+}
+
+.tab-content { display: none; animation: popIn 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.tab-content.active { display: block; }
+
+@keyframes popIn {
+  from { opacity: 0; transform: scale(0.95) translateY(15px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 18px;
+  margin-bottom: 40px;
+}
+
+.stat-item {
+  background: #ffffff;
+  border: 3px solid var(--border-thick);
+  border-radius: 24px 24px 24px 12px;
+  padding: 28px 22px;
+  text-align: center;
+  box-shadow: 5px 5px 0px var(--border-thick);
+  transition: all 0.2s;
+}
+.stat-item:nth-child(1) { background: #fff2f2; }
+.stat-item:nth-child(2) { background: #eef6ff; }
+.stat-item:nth-child(3) { background: #f4fbf0; }
+.stat-item:nth-child(4) { background: #fffdf0; }
+
+.stat-item:hover {
+  transform: translate(-3px, -3px);
+  box-shadow: 8px 8px 0px var(--border-thick);
+}
+
+.stat-value {
+  font-size: 34px;
+  font-weight: 950;
+  color: var(--border-thick);
+  letter-spacing: -0.5px;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 8px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.card {
+  background: var(--card);
+  border: 3px solid var(--border-thick);
+  border-radius: 28px;
+  padding: 36px;
+  margin-bottom: 28px;
+  box-shadow: var(--shadow-bento);
+}
+.card-title {
+  font-size: 20px;
+  font-weight: 900;
+  margin-bottom: 28px;
+  color: var(--border-thick);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.share-section { display: flex; justify-content: center; margin-bottom: 32px; }
+
+.friend-list { display: grid; gap: 16px; }
+
+.friend-card {
+  background: #ffffff;
+  border: 3px solid var(--border-thick);
+  border-radius: 24px 24px 24px 14px;
+  padding: 22px 26px;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  cursor: pointer;
+  box-shadow: 5px 5px 0px var(--border-thick);
+  transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+.friend-card:hover {
+  transform: translate(-5px, -5px);
+  box-shadow: 10px 10px 0px var(--brand-purple);
+  background: #fdfdfd;
+}
+
+.friend-avatar {
+  width: 58px;
+  height: 58px;
+  border-radius: 16px;
+  border: 2.5px solid var(--border-thick);
+  flex-shrink: 0;
+  background: var(--surface);
+  overflow: hidden;
+  box-shadow: 2px 2px 0px var(--border-thick);
+}
+.friend-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.friend-avatar .placeholder {
+  width: 100%; height: 100%; display: flex;
+  align-items: center; justify-content: center;
+  font-size: 22px; font-weight: 900;
+  color: var(--border-thick); background: var(--brand-yellow);
+}
+
+.friend-info { flex: 1; min-width: 0; }
+.friend-name { font-weight: 900; font-size: 17px; color: var(--border-thick); }
+.friend-meta { font-size: 13px; color: var(--text-dim); margin-top: 4px; font-weight: 600; }
+
+.friend-score-col { text-align: right; flex-shrink: 0; }
+
+.score-value {
+  font-size: 26px;
+  font-weight: 950;
+  color: var(--brand-primary);
+}
+
+.score-bar {
+  height: 10px;
+  background: #e2e8f0;
+  border: 2.5px solid var(--border-thick);
+  border-radius: 100px;
+  overflow: hidden;
+  margin-top: 8px;
+  width: 110px;
+}
+.score-bar-fill {
+  height: 100%;
+  border-radius: 100px;
+  background: var(--brand-primary);
+}
+
+.top5-dots { display: flex; gap: 8px; margin-top: 10px; }
+.top5-dot {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 900;
+  border: 2.5px solid var(--border-thick);
+  box-shadow: 1.5px 1.5px 0px var(--border-thick);
+}
+.top5-dot.owned {
+  background: var(--brand-success);
+  color: white;
+}
+.top5-dot.missing {
+  background: #ffffff;
+  color: var(--text-muted);
+}
+
+.detail-header {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  margin-bottom: 36px;
+  padding-bottom: 28px;
+  border-bottom: 3.5px dashed #cbd5e1;
+}
+
+.detail-avatar {
+  width: 80px;
+  height: 80px;
+  border-radius: 22px;
+  border: 3px solid var(--border-thick);
+  overflow: hidden;
+  flex-shrink: 0;
+  box-shadow: 5px 5px 0px var(--brand-yellow);
+}
+.detail-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.detail-avatar .placeholder {
+  width: 100%; height: 100%; display: flex;
+  align-items: center; justify-content: center;
+  font-size: 34px; font-weight: 950; color: var(--border-thick); background: var(--brand-yellow);
+}
+
+.detail-info h2 { font-size: 28px; color: var(--border-thick); font-weight: 950; }
+
+.match-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--brand-yellow);
+  color: var(--border-thick);
+  padding: 8px 18px;
+  border-radius: 100px;
+  font-weight: 900;
+  font-size: 14px;
+  margin-top: 10px;
+  border: 2.5px solid var(--border-thick);
+  box-shadow: 2px 2px 0px var(--border-thick);
+}
+
+.detail-body { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; margin-bottom: 20px; }
+
+.game-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 18px;
+  background: #ffffff;
+  border-radius: 18px;
+  margin-bottom: 12px;
+  border: 2.5px solid var(--border-thick);
+  box-shadow: 3px 3px 0px var(--border-thick);
+}
+
+.game-icon {
+  width: 38px; height: 38px; border-radius: 10px;
+  border: 2px solid var(--border-thick); flex-shrink: 0; overflow: hidden;
+}
+.game-icon img { width: 100%; height: 100%; object-fit: cover; }
+
+.game-name { flex: 1; font-size: 15px; font-weight: 800; color: var(--border-thick); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.game-hours-compare { display: flex; gap: 16px; font-size: 13px; color: var(--text-dim); flex-shrink: 0; font-weight: 800; }
+.game-hours-compare span { display: flex; align-items: center; gap: 6px; }
+
+.hour-dot { width: 11px; height: 11px; border-radius: 50%; display: inline-block; border: 2px solid var(--border-thick); }
+.hour-dot.me { background: var(--brand-secondary); }
+.hour-dot.them { background: var(--brand-yellow); }
+
+.shared-grid { display: grid; gap: 12px; }
+
+.shared-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  background: var(--surface);
+  border-radius: 16px;
+  border: 2.5px solid var(--border-thick);
+}
+
+.shared-item .game-icon { width: 38px; height: 38px; border-radius: 10px; border: 2px solid var(--border-thick); }
+.shared-item .game-name { flex: 1; font-size: 15px; font-weight: 800; color: var(--border-thick); }
+.shared-item .game-hours { font-size: 14px; color: var(--text-dim); font-weight: 700; }
+.shared-item .game-hours .my-hours { color: var(--brand-secondary); font-weight: 900; }
+.shared-item .game-hours .friend-hours { color: var(--brand-yellow); font-weight: 900; }
+
+.loading { text-align: center; padding: 90px 24px; }
+.loading .spinner {
+  width: 52px; height: 52px;
+  border: 6px solid #e2e8f0;
+  border-top-color: var(--brand-primary);
+  border-radius: 50%; animation: spin 0.55s linear infinite;
+  margin: 0 auto 24px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading p { font-size: 18px; font-weight: 900; color: var(--border-thick); }
+
+.error {
+  text-align: center; padding: 28px;
+  color: var(--border-thick);
+  background: #fff5f5;
+  border: 3.5px solid var(--brand-primary);
+  border-radius: 24px; margin-bottom: 28px;
+  font-weight: 800;
+  box-shadow: 6px 6px 0 var(--brand-primary);
+}
+
+.empty { text-align: center; padding: 90px 20px; }
+.empty p { font-size: 17px; font-weight: 800; color: var(--text-dim); }
+
+.progress-area { margin-bottom: 40px; }
+.progress-text { font-size: 15px; color: var(--border-thick); text-align: center; margin-bottom: 14px; font-weight: 900; }
+.progress-track { width: 100%; height: 18px; background: #ffffff; border: 3px solid var(--border-thick); border-radius: 100px; overflow: hidden; box-shadow: 2px 2px 0px var(--border-thick); }
+.progress-fill { height: 100%; background: linear-gradient(90deg, var(--brand-secondary), var(--brand-primary)); border-right: 3px solid var(--border-thick); transition: width 0.3s ease; }
+
+.footer { text-align: center; margin-top: 60px; font-size: 13px; color: var(--text-dim); font-weight: 600; }
+.footer a { color: var(--brand-secondary); font-weight: 800; text-decoration: none; }
+.footer a:hover { text-decoration: underline; }
+.footer .sep { margin: 0 8px; color: var(--text-muted); }
+
+@media (max-width: 768px) {
+  .app-container { padding: 40px 16px; }
+  .header h1 { font-size: 34px; }
+  .config-row { flex-direction: column; align-items: stretch; gap: 16px; }
+  .btn { width: 100%; padding: 18px; }
+  .detail-header { flex-direction: column; text-align: center; }
+  .detail-body { grid-template-columns: 1fr; }
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .friend-card { flex-direction: column; text-align: center; align-items: center; padding: 28px; }
+  .friend-score-col { text-align: center; margin-top: 18px; display: flex; flex-direction: column; align-items: center; }
+}
+</style>
+</head>
+<body>
+<div class="app-container">
+
+  <div class="header">
+    <div class="header-badge">LET'S PLAY</div>
+    <h1>Steam 玩伴探测</h1>
+    <div class="header-desc">一键扫描你的 Steam 宇宙！通过硬核的数据分析，为你挖掘出藏在列表里、最能跟你玩到一块去的宝藏死党</div>
+  </div>
+
+  <div class="config-panel">
+    <div class="config-row">
+      <div class="config-group">
+        <label>你的 Steam ID 或主页链接</label>
+        <input type="text" id="steamId" placeholder="在这里粘贴你的主页链接...">
+        <div class="hint">
+          先去网页打开你的 <a href="https://steamcommunity.com/my/profile" target="_blank">Steam 个人主页</a>，把地址栏那一长串直接粘进来就 OK 啦！<br>
+          支持格式：<code style="background:#e2e8f0;padding:2px 8px;border-radius:6px;border:2px solid var(--border-thick);font-size:12px;font-weight:800;">7656119xxxxxxxxxx</code> 64位数字ID，或者完整主页链接直接粘贴
+        </div>
+      </div>
+      <div class="config-group" style="flex:0 0 auto; width: auto;">
+        <label style="opacity: 0; max-height: 15px; display: block; margin-bottom: 14px;">占位</label>
+        <button class="btn btn-primary" id="fetchBtn">启动雷达扫描</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="progress-area" id="progressArea" style="display:none;">
+    <div class="progress-text" id="progressText">大招蓄力中！正在疯狂打包数据...</div>
+    <div class="progress-track"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+  </div>
+
+  <div class="tabs" id="tabs" style="display:none;">
+    <button class="tab-btn active" data-tab="tab-library">游戏收藏</button>
+    <button class="tab-btn" data-tab="tab-matches">匹配排行</button>
+  </div>
+
+  <div class="tab-content active" id="tab-library"><div id="libraryContent"></div></div>
+  <div class="tab-content" id="tab-matches"><div id="matchesContent"></div></div>
+  <div class="tab-content" id="tab-detail"><div id="detailContent"></div></div>
+</div>
+
+<div class="footer">
+  <a href="https://github.com/Pomran/steam-friend-finder" target="_blank">GitHub</a>
+  <span class="sep">·</span>
+  基于 MIT 协议开源
+</div>
+
+<div class="toast" id="toast"></div>
+<script src="script.js"></script>
+</body>
+</html>

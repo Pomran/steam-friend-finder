@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Steam 好友匹配器",
+  "version": "1.0",
+  "description": "根据 Steam 游戏时长，找到与你最合拍的好友",
+  "permissions": ["storage"],
+  "host_permissions": ["https://api.steampowered.com/*"],
+  "action": {
+    "default_title": "Steam 好友匹配器"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
