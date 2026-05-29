@@ -12,28 +12,28 @@
 
 ## 安装
 
-### Chrome 扩展（推荐）
+### 浏览器扩展（推荐）
 
 1. 下载本仓库代码（Clone 或 Download ZIP）
-2. 打开 Chrome 浏览器，进入 `chrome://extensions`
+2. 打开浏览器扩展管理页面（Chrome 输入 `chrome://extensions`，Edge 输入 `edge://extensions`）
 3. 开启右上角「开发者模式」
 4. 点击「加载已解压的扩展程序」，选择项目文件夹
 5. 安装完成，点击工具栏图标即可使用
 
 ### 直接使用（无需安装）
 
-也可在 Chrome 中直接打开 `index.html` 使用（需自行处理 CORS）。
+也可直接在浏览器中打开 `index.html` 使用（需自行处理 CORS）。
 
 ## 使用方法
 
 1. 打开你的 [Steam 个人主页](https://steamcommunity.com/my/profile)
 2. 复制地址栏链接，粘贴到输入框中
-3. 点击「启动雷达扫描」
+3. 点击「开始扫描」
 4. 等待分析完成，即可查看结果
 
 ## 技术说明
 
-- Manifest V3 Chrome 扩展，无需后端服务器
+- Manifest V3 浏览器扩展，无需后端服务器
 - 纯前端直连 Steam API（通过 `host_permissions` 授权）
 - Steam API 密钥内置混淆，用户无需自行申请
 - 匹配算法基于 Top5 游戏时长的加权相似度 + 共同游戏数量

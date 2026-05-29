@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
-  "name": "Steam 好友匹配器",
+  "name": "Steam 玩伴探测",
   "version": "1.0",
   "description": "根据 Steam 游戏时长，找到与你最合拍的好友",
   "permissions": ["storage"],
-  "host_permissions": ["https://api.steampowered.com/*"],
+  "host_permissions": ["https://api.steampowered.com/*", "https://media.steampowered.com/*"],
   "action": {
     "default_title": "Steam 好友匹配器"
   },

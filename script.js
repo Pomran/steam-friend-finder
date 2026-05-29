@@ -40,10 +40,10 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('matchesContent').addEventListener('click', (e) => {
     const card = e.target.closest('.friend-card');
     if (card) showPersonDetail(card.dataset.steamid);
-    if (e.target.id === 'shareBtn') shareResults();
   });
   document.getElementById('detailContent').addEventListener('click', (e) => {
     if (e.target.id === 'backBtn') switchTab('tab-matches');
+    if (e.target.id === 'shareDetailBtn') shareDetailResults();
   });
 });
 
@@ -226,162 +226,148 @@ function showToast(text) {
   setTimeout(() => t.classList.remove('show'), 2500);
 }
 
-async function generateShareImage() {
-  const top5 = state.playerTopGames.slice(0, 5);
-  const matches = state.friendsData.slice(0, 10);
-  const W = 700, pad = 40, rowH = 48, gap = 6, secH = 52;
-  const H = pad + 16 + 48 + 28 + 24 + secH + top5.length*(rowH+gap) + 24 + secH + matches.length*(rowH+gap) + 20 + 36 + pad;
+async function loadIcon(appid, iconUrl) {
+  if (!iconUrl) return null;
+  const url = `https://media.steampowered.com/steamcommunity/public/images/apps/${appid}/${iconUrl}.jpg`;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => { resolve(img); URL.revokeObjectURL(blobUrl); };
+      img.onerror = () => { resolve(null); URL.revokeObjectURL(blobUrl); };
+      img.src = blobUrl;
+    });
+  } catch {
+    return null;
+  }
+}
 
-  const c = document.createElement('canvas');
-  c.width = W; c.height = H;
-  const ctx = c.getContext('2d');
+const FONT = 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+const RANK_COLORS = ['#fbc531', '#94a3b8', '#cd7f32'];
+const ICON_COLORS = ['#ff5e62', '#3b82f6', '#10b981', '#8c7ae6', '#fbc531'];
 
-  const FONT = 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+function drawRoundRect(ctx, x, y, w, h, r, fill, stroke, lw) {
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, r);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw || 2; ctx.stroke(); }
+}
 
-  // Card background + border
-  const r = 24;
-  ctx.beginPath(); ctx.roundRect(4, 4, W-8, H-8, r-2);
-  ctx.fillStyle = '#ffffff'; ctx.fill();
-  ctx.strokeStyle = '#0f172a'; ctx.lineWidth = 8; ctx.stroke();
+function drawGameIcon(ctx, x, y, size, icon, letter) {
+  const cx = x + size/2, cy = y + size/2;
+  ctx.save();
+  ctx.beginPath(); ctx.roundRect(x, y, size, size, 6); ctx.clip();
+  if (icon) {
+    try { ctx.drawImage(icon, x, y, size, size); } catch(e) { icon = null; }
+  }
+  if (!icon) {
+    const ci = (letter.charCodeAt(0) || 0) % ICON_COLORS.length;
+    ctx.fillStyle = ICON_COLORS[ci]; ctx.fillRect(x, y, size, size);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `800 ${Math.round(size*0.45)}px ${FONT}`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(letter.toUpperCase(), cx, cy+1);
+  }
+  ctx.restore();
+  ctx.strokeStyle = '#0f172a'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.roundRect(x, y, size, size, 6); ctx.stroke();
+}
 
-  // Shadow
-  ctx.beginPath(); ctx.roundRect(0, 0, W, H, r);
-  ctx.fillStyle = '#f4f7fc'; ctx.fill();
-  ctx.strokeStyle = '#0f172a'; ctx.lineWidth = 4; ctx.stroke();
+const PLACEHOLDER_COLORS = ['#ff5e62','#3b82f6','#10b981','#8c7ae6','#fbc531'];
 
-  // Inner white card
-  ctx.beginPath(); ctx.roundRect(12, 12, W-24, H-24, r-6);
-  ctx.fillStyle = '#ffffff'; ctx.fill();
-
-  let y = pad + 16;
-
-  // Title bar
-  ctx.beginPath(); ctx.roundRect(pad, y, W-pad*2, 48, 12);
-  ctx.fillStyle = '#0f172a'; ctx.fill();
-  ctx.fillStyle = '#ffffff';
-  ctx.font = `bold 20px ${FONT}`;
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('Steam 玩伴探测', W/2, y + 24);
-  y += 48 + 28;
-
-  // Divider
-  ctx.setLineDash([6, 6]);
-  ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(pad+8, y); ctx.lineTo(W-pad-8, y); ctx.stroke();
-  ctx.setLineDash([]);
-  y += 24;
-
-  // ---- Top 5 section ----
-  ctx.fillStyle = '#0f172a';
-  ctx.font = `bold 18px ${FONT}`;
-  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillText('我的 Top5', pad + 8, y + 14);
-  y += secH;
-
-  top5.forEach((g, i) => {
-    const h = Math.round((g.playtime_forever||0)/60);
-    // row bg
-    ctx.beginPath(); ctx.roundRect(pad+4, y, W-pad*2-8, rowH, 10);
-    ctx.fillStyle = i % 2 === 0 ? '#ffffff' : '#f8fafc';
-    ctx.fill();
-    ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 1.5; ctx.stroke();
-
-    // rank number
-    ctx.fillStyle = '#94a3b8'; ctx.font = `600 14px ${FONT}`; ctx.textAlign = 'center';
-    ctx.fillText(`${i+1}`, pad + 28, y + rowH/2);
-
-    // game name
-    const maxW = W - pad*2 - 180;
-    let nm = g.name;
-    ctx.font = `700 15px ${FONT}`; ctx.textAlign = 'left'; ctx.fillStyle = '#0f172a';
-    const tw = ctx.measureText(nm).width;
-    if (tw > maxW) { while (ctx.measureText(nm+'…').width > maxW) nm = nm.slice(0, -1); nm += '…'; }
-    ctx.fillText(nm, pad + 52, y + rowH/2);
-
-    // hours
-    ctx.font = `700 14px ${FONT}`; ctx.textAlign = 'right'; ctx.fillStyle = '#ff5e62';
-    ctx.fillText(`${h}h`, W - pad - 12, y + rowH/2);
-
-    y += rowH + gap;
-  });
-
-  y += 24;
-
-  // ---- Matches section ----
-  ctx.fillStyle = '#0f172a';
-  ctx.font = `bold 18px ${FONT}`;
-  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillText('匹配排行', pad + 8, y + 14);
-  y += secH;
-
-  matches.forEach((f, i) => {
-    const pct = f.score * 100;
-    const name = f.summary?.personaname || f.steamid;
-    const sc = scoreColorHex(pct);
-    const shared = state.playerGames.filter(pg => f.games.some(fg => fg.appid === pg.appid)).length;
-
-    // row
-    ctx.beginPath(); ctx.roundRect(pad+4, y, W-pad*2-8, rowH, 10);
-    ctx.fillStyle = i % 2 === 0 ? '#ffffff' : '#f8fafc';
-    ctx.fill();
-    ctx.strokeStyle = i === 0 ? '#fbc531' : '#e2e8f0'; ctx.lineWidth = i === 0 ? 2 : 1.5; ctx.stroke();
-
-    ctx.fillStyle = '#94a3b8'; ctx.font = `600 14px ${FONT}`; ctx.textAlign = 'center';
-    ctx.fillText(`${i+1}`, pad + 28, y + rowH/2);
-
-    const nm2 = name.length > 14 ? name.slice(0, 12) + '…' : name;
-    ctx.font = `700 15px ${FONT}`; ctx.textAlign = 'left'; ctx.fillStyle = '#0f172a';
-    ctx.fillText(nm2, pad + 52, y + rowH/2);
-
-    ctx.font = `600 11px ${FONT}`; ctx.fillStyle = '#64748b'; ctx.textAlign = 'left';
-    ctx.fillText(`共同${shared}款`, pad + 52, y + rowH/2 + 18);
-
-    // score bar bg
-    const barX = W - pad - 200, barY = y + 10, barW = 100, barH = 12;
-    ctx.beginPath(); ctx.roundRect(barX, barY, barW, barH, 6);
-    ctx.fillStyle = '#e2e8f0'; ctx.fill();
-    ctx.strokeStyle = '#0f172a'; ctx.lineWidth = 2; ctx.stroke();
-
-    // score bar fill
-    const fw = Math.min(barW, (pct/100) * barW);
-    if (fw > 4) {
-      ctx.beginPath(); ctx.roundRect(barX+2, barY+2, fw-4, barH-4, 4);
-      ctx.fillStyle = sc; ctx.fill();
-    }
-
-    // percentage
-    ctx.font = `900 16px ${FONT}`; ctx.textAlign = 'right'; ctx.fillStyle = sc;
-    ctx.fillText(`${pct.toFixed(1)}%`, W - pad - 12, y + rowH/2);
-
-    y += rowH + gap;
-  });
-
-  y += 20;
-
-  // Footer
-  ctx.beginPath(); ctx.roundRect(pad+4, y, W-pad*2-8, 36, 10);
-  ctx.fillStyle = '#f8fafc'; ctx.fill();
-  ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 1.5; ctx.stroke();
-  ctx.fillStyle = '#94a3b8'; ctx.font = `600 12px ${FONT}`; ctx.textAlign = 'center';
-  ctx.fillText('由 Steam 玩伴探测生成', W/2, y + 18);
-
-  return new Promise((resolve) => {
-    c.toBlob((blob) => {
-      resolve(URL.createObjectURL(blob));
-    }, 'image/png');
+function generatePlaceholder(size, letter) {
+  return new Promise(r => {
+    const c = document.createElement('canvas'); c.width = size; c.height = size;
+    const ctx = c.getContext('2d');
+    const ci = (letter.charCodeAt(0)||0) % PLACEHOLDER_COLORS.length;
+    ctx.fillStyle = PLACEHOLDER_COLORS[ci]; ctx.fillRect(0, 0, size, size);
+    ctx.fillStyle = '#ffffff'; ctx.font = `800 ${Math.round(size*0.45)}px system-ui,sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(letter.toUpperCase(), size/2, size/2+1);
+    r(c.toDataURL());
   });
 }
 
-async function shareResults() {
-  const url = await generateShareImage();
+async function downloadImage(name, fn) {
+  const url = await fn();
+  if (!url) return;
   const a = document.createElement('a');
-  a.href = url;
-  a.download = 'Steam玩伴探测.png';
-  document.body.appendChild(a);
-  a.click();
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-  showToast('图片已生成，请保存');
+}
+
+async function shareDetailResults() {
+  const p = state.friendsData.find(f => f.steamid === state._detailSteamId);
+  if (!p) return;
+  const name = p.summary?.personaname || p.steamid;
+  downloadImage(`Steam玩伴探测_${name}.png`, () => generateShareImageForDetail());
+}
+
+async function captureAndFooter(el, scale, title) {
+  if (!window.html2canvas) { showToast('html2canvas 未加载'); return null; }
+  const s = scale||2;
+  const clone = el.cloneNode(true);
+  // Remove UI buttons from clone
+  clone.querySelectorAll('.share-section, .btn, [id$="Btn"], [id$="btn"]').forEach(e => e.remove());
+  // Prepend platform badge + title
+  const b = document.createElement('div');
+  b.style.cssText = 'text-align:center;margin-bottom:14px;';
+  const bi = document.createElement('span');
+  bi.textContent = 'STEAM 玩伴探测';
+  bi.style.cssText = 'display:inline-block;background:#fbc531;color:#0f172a;font-weight:900;font-size:18px;padding:10px 30px;border-radius:12px;border:2.5px solid #0f172a;';
+  b.appendChild(bi);
+  clone.insertBefore(b, clone.firstChild);
+  if (title) {
+    const h = document.createElement('div');
+    h.textContent = title;
+    h.style.cssText = 'text-align:center;font-size:28px;font-weight:800;color:#0f172a;padding:0 0 16px 0;';
+    clone.insertBefore(h, b.nextSibling);
+  }
+  const wrap = document.createElement('div');
+  wrap.style.cssText = `position:fixed;left:-9999px;top:0;width:${el.scrollWidth||600}px;background:#f8fafc;font-family:system-ui,sans-serif;padding:20px;box-sizing:border-box;`;
+  wrap.appendChild(clone);
+  document.body.appendChild(wrap);
+  for (const img of clone.querySelectorAll('img')) {
+    if (img.style.display === 'none') img.style.display = '';
+    if (!img.src || !img.src.startsWith('http')) continue;
+    const letter = (img.alt && img.alt[0]) || '?';
+    img.removeAttribute('srcset');
+    try {
+      const r=await fetch(img.src);
+      if (r.ok) {
+        const b=await r.blob();
+        img.src = URL.createObjectURL(b);
+      } else {
+        img.src = await generatePlaceholder(36, letter);
+      }
+    } catch {
+      img.src = await generatePlaceholder(36, letter);
+    }
+  }
+  // Wait for all blob URL images to finish loading
+  await Promise.allSettled([...clone.querySelectorAll('img')].map(img => img.complete ? Promise.resolve() : new Promise(r => { img.onload=r; img.onerror=r; })));
+  try {
+    const raw = await html2canvas(wrap, { useCORS: false, scale: s, backgroundColor: '#f8fafc', logging: false });
+    document.body.removeChild(wrap);
+    const w = raw.width, h = raw.height;
+    const c = document.createElement('canvas'); c.width = w; c.height = h + Math.round(60*s);
+    const ctx = c.getContext('2d'); ctx.drawImage(raw, 0, 0);
+    ctx.fillStyle = '#94a3b8'; ctx.font = `${Math.round(12*s)}px system-ui,sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('由 Steam 玩伴探测生成 · github.com/Pomran/steam-friend-finder', w/2, h + Math.round(30*s));
+    return c;
+  } catch(e) { document.body.removeChild(wrap); showToast('截图失败: '+e.message); return null; }
+}
+
+async function generateShareImageForDetail() {
+  const el = document.getElementById('detailContent');
+  if (!el||!el.children.length) return showToast('暂无数据');
+  const c = await captureAndFooter(el, 2, '匹配详情');
+  if (!c) return null;
+  return new Promise(r=>c.toBlob(b=>r(b?URL.createObjectURL(b):null),'image/png'));
 }
 
 function getSharedGames(pgs, fgs) {
@@ -409,7 +395,7 @@ function renderLibrary() {
         const h = Math.round((g.playtime_forever||0)/60);
         const iconUrl = g.img_icon_url ? `https://media.steampowered.com/steamcommunity/public/images/apps/${g.appid}/${g.img_icon_url}.jpg` : '';
         return `<div class="game-row">
-          ${iconUrl ? `<div class="game-icon"><img src="${iconUrl}" class="lib-icon" alt="" loading="lazy"></div>` : `<div class="game-icon" style="background:var(--surface);display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:12px;font-weight:800;">?</div>`}
+          ${iconUrl ? `<div class="game-icon"><img src="${iconUrl}" class="lib-icon" alt=""></div>` : `<div class="game-icon" style="background:var(--surface);display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:12px;font-weight:800;">?</div>`}
           <span style="width:18px;font-size:12px;color:var(--text-muted);font-weight:600;text-align:center;">${i+1}</span>
           <span class="game-name">${g.name}</span>
           <span style="color:var(--brand-primary);font-weight:600;font-size:13px;">${h}h</span>
@@ -441,7 +427,6 @@ function renderMatches() {
       <div class="stat-item"><div class="stat-value">${f.filter(x=>x.score>0.3).length}</div><div class="stat-label">高度匹配</div></div>
       <div class="stat-item"><div class="stat-value" style="color:var(--brand-yellow);">${(best.score*100).toFixed(1)}%</div><div class="stat-label">最高匹配</div></div>
     </div>
-    <div class="share-section"><button class="btn btn-share" id="shareBtn">分享匹配结果</button></div>
     <div class="card"><div class="card-title">匹配排行</div><div class="friend-list">${f.map((x, i) => renderPersonCard(x, i)).join('')}</div></div>
   `;
 }
@@ -476,6 +461,7 @@ function renderPersonCard(person, rank) {
 
 function showPersonDetail(steamid) {
   const p = state.friendsData.find(f => f.steamid === steamid); if (!p) return;
+  state._detailSteamId = steamid;
   switchTab('tab-detail');
   const name = p.summary?.personaname || steamid;
   const avatar = p.summary?.avatarfull || p.summary?.avatarmedium || '';
@@ -495,6 +481,7 @@ function showPersonDetail(steamid) {
         <h2>${name}</h2>
         <div class="match-badge">${pct}% 匹配 · Top5 重合 ${matchCount}/${TOP_N}</div>
       </div>
+      <button class="btn btn-share" id="shareDetailBtn" style="font-size:13px;padding:8px 16px;">分享</button>
       <button class="btn btn-ghost" id="backBtn">← 返回</button>
     </div>
     <div class="detail-body">
@@ -539,7 +526,7 @@ function showPersonDetail(steamid) {
       <div class="card-title">共同游戏 (${shared.length})</div>
       <div class="shared-grid">
         ${shared.length ? shared.slice(0,40).map(g => `<div class="shared-item">
-          <div class="game-icon"><img src="https://media.steampowered.com/steamcommunity/public/images/apps/${g.appid}/${g.icon||''}.jpg" class="detail-img" alt="" loading="lazy"></div>
+          <div class="game-icon"><img src="https://media.steampowered.com/steamcommunity/public/images/apps/${g.appid}/${g.icon||''}.jpg" class="detail-img" alt="${g.name}"></div>
           <span class="game-name">${g.name}</span>
           <span class="game-hours"><strong class="my-hours">${Math.round(g.playerHours/60)}h</strong> · <strong class="friend-hours">${Math.round(g.friendHours/60)}h</strong></span>
         </div>`).join('') : '<div style="color:var(--text-dim);padding:12px;text-align:center;">暂无共同游戏</div>'}

@@ -547,12 +547,13 @@ body {
         <input type="text" id="steamId" placeholder="在这里粘贴你的主页链接...">
         <div class="hint">
           先去网页打开你的 <a href="https://steamcommunity.com/my/profile" target="_blank">Steam 个人主页</a>，把地址栏那一长串直接粘进来就 OK 啦！<br>
-          支持格式：<code style="background:#e2e8f0;padding:2px 8px;border-radius:6px;border:2px solid var(--border-thick);font-size:12px;font-weight:800;">7656119xxxxxxxxxx</code> 64位数字ID，或者完整主页链接直接粘贴
+          如果正在使用 Steam 客户端，请在个人资料页面左键点击复制地址栏链接，或前往浏览器地址栏复制。<br>
+          支持格式：数字ID，或者完整主页链接直接粘贴
         </div>
       </div>
       <div class="config-group" style="flex:0 0 auto; width: auto;">
         <label style="opacity: 0; max-height: 15px; display: block; margin-bottom: 14px;">占位</label>
-        <button class="btn btn-primary" id="fetchBtn">启动雷达扫描</button>
+        <button class="btn btn-primary" id="fetchBtn">开始扫描</button>
       </div>
     </div>
   </div>
@@ -579,6 +580,7 @@ body {
 </div>
 
 <div class="toast" id="toast"></div>
+<script src="html2canvas.min.js"></script>
 <script src="script.js"></script>
 </body>
 </html>
