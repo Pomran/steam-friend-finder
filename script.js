@@ -10,7 +10,7 @@ const TOP_N = 5;
 const _k = "314BA61A8A54D175F41CA4FF0097EEB1";
 const DEFAULT_API_KEY = _k.split('').reverse().join('');
 
-const PROXY_BASE = 'https://steam.i-test.top';
+const PROXY_BASE = 'https://api.steam.i-test.top';
 
 function proxyUrl(url) {
   return PROXY_BASE ? `${PROXY_BASE}?url=${encodeURIComponent(url)}` : url;
