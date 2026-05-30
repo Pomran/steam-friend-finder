@@ -79,6 +79,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btn) {
       switchTab(btn.dataset.tab);
       if (btn.dataset.tab === 'tab-strangers') loadStrangers();
+      if (btn.dataset.tab === 'tab-custom') renderCustomMatch();
     }
   });
   document.getElementById('matchesContent').addEventListener('click', (e) => {
@@ -818,4 +819,110 @@ function computeStrangerMatchScore(myTop5, strangerTop5) {
     weightedSum += w * (1 - Math.abs(pT - sT) / (pT + sT + 1));
   }
   return Math.min(((weightedSum / maxWeight) * 0.6 + (matched / TOP_N) * 0.4) * 1.3, 1.0);
+}
+
+function renderCustomMatch() {
+  const el = document.getElementById('customContent');
+  const games = state.playerGames;
+  if (!games || !games.length) {
+    el.innerHTML = `<div class="empty"><p>请先完成扫描</p></div>`;
+    return;
+  }
+  const mySteamId = state.mySteamId;
+  el.innerHTML = `
+    <div class="card">
+      <div class="card-title">自定义匹配</div>
+      <div class="custom-form">
+        <label>
+          选择游戏
+          <select id="customGameSelect">
+            ${games.filter(g => (g.playtime_forever || 0) > 0).sort((a, b) => (b.playtime_forever || 0) - (a.playtime_forever || 0)).map(g => {
+              const h = Math.round((g.playtime_forever || 0) / 60);
+              const excluded = isExcluded(g.appid);
+              return `<option value="${g.appid}" ${excluded ? 'disabled style="color:var(--text-muted);"' : ''}>${g.name} (${h}h)${excluded ? ' [已排除]' : ''}</option>`;
+            }).join('')}
+          </select>
+        </label>
+        <label>
+          最低时长（小时）
+          <input type="number" id="customMinHours" value="1" min="0" step="1">
+        </label>
+        <label style="flex-direction:row;align-items:center;gap:12px;">
+          <span>匹配范围</span>
+          <span class="radio-group">
+            <label><input type="radio" name="customTarget" value="friends" checked> 好友</label>
+            <label><input type="radio" name="customTarget" value="strangers"> 陌生人</label>
+            <label><input type="radio" name="customTarget" value="all"> 全部</label>
+          </span>
+        </label>
+        <button class="btn btn-primary" id="runCustomMatchBtn">开始匹配</button>
+      </div>
+    </div>
+    <div id="customResults"></div>
+  `;
+  document.getElementById('runCustomMatchBtn').addEventListener('click', runCustomMatch);
+}
+
+function runCustomMatch() {
+  const appid = parseInt(document.getElementById('customGameSelect').value);
+  const minHours = parseFloat(document.getElementById('customMinHours').value) || 0;
+  const target = document.querySelector('input[name="customTarget"]:checked').value;
+  const myGame = state.playerGames.find(g => g.appid === appid);
+  if (!myGame) { showToast('未找到该游戏'); return; }
+  const myHours = (myGame.playtime_forever || 0) / 60;
+  const results = [];
+
+  if (target === 'friends' || target === 'all') {
+    for (const f of state.friendsData) {
+      const fg = (f.games || []).find(g => g.appid === appid);
+      if (!fg) continue;
+      const fHours = (fg.playtime_forever || 0) / 60;
+      if (fHours < minHours) continue;
+      results.push({
+        steamid: f.steamid, name: f.summary?.personaname || f.steamid,
+        avatar: f.summary?.avatarmedium || '', hours: fHours,
+        diff: Math.abs(myHours - fHours), source: '好友',
+      });
+    }
+  }
+  if ((target === 'strangers' || target === 'all') && state.strangersData) {
+    for (const s of state.strangersData) {
+      const sg = (s.top5 || []).find(g => g.appid === appid);
+      if (!sg) continue;
+      const sHours = (sg.playtime_forever || 0) / 60;
+      if (sHours < minHours) continue;
+      results.push({
+        steamid: s.steamid, name: s.personaname || s.steamid,
+        avatar: s.avatar || '', hours: sHours,
+        diff: Math.abs(myHours - sHours), source: '陌生人',
+      });
+    }
+  }
+
+  results.sort((a, b) => a.diff - b.diff);
+
+  const resEl = document.getElementById('customResults');
+  if (!results.length) {
+    resEl.innerHTML = `<div class="empty"><p>未找到符合条件的玩家</p></div>`;
+    return;
+  }
+  resEl.innerHTML = `
+    <div class="stats-grid">
+      <div class="stat-item"><div class="stat-value">${results.length}</div><div class="stat-label">匹配结果</div></div>
+      <div class="stat-item"><div class="stat-value" style="font-size:16px;">${myGame.name}</div><div class="stat-label">我: ${myHours.toFixed(1)}h</div></div>
+      <div class="stat-item"><div class="stat-value" style="color:var(--brand-secondary);">${results[0].hours.toFixed(1)}h</div><div class="stat-label">最接近: ${results[0].name}</div></div>
+    </div>
+    <div class="card"><div class="card-title">自定义匹配结果</div><div class="friend-list">${results.map((r, i) => `
+      <div class="friend-card" style="animation-delay:${i * 0.04}s;">
+        <div class="friend-avatar">${r.avatar ? `<img src="${r.avatar}" alt="">` : `<div class="placeholder">${r.name[0]}</div>`}</div>
+        <div class="friend-info">
+          <div class="friend-name">${r.name} <span class="stranger-badge" style="background:${r.source === '好友' ? 'var(--brand-primary)' : 'var(--brand-purple)'};">${r.source}</span></div>
+          <div class="friend-meta" style="margin-top:2px;">${r.source} · ${r.hours.toFixed(1)}h</div>
+        </div>
+        <div class="friend-score-col">
+          <div class="score-value" style="color:var(--brand-secondary);font-size:20px;">${r.hours.toFixed(1)}h</div>
+          <div style="font-size:11px;color:var(--text-dim);margin-top:4px;font-weight:600;">相差 ${(Math.abs(myHours - r.hours)).toFixed(1)}h</div>
+        </div>
+      </div>`).join('')}</div></div>
+  `;
 }

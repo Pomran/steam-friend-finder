@@ -580,6 +580,50 @@ body {
   letter-spacing: 0.3px;
 }
 
+.custom-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.custom-form label {
+  font-size: 13px;
+  font-weight: 900;
+  color: var(--border-thick);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.custom-form select, .custom-form input[type="number"] {
+  padding: 14px 18px;
+  border: 3px solid var(--border-thick);
+  border-radius: 14px;
+  font-size: 15px;
+  font-weight: 700;
+  background: #fff;
+  color: var(--text);
+}
+.custom-form select:focus, .custom-form input[type="number"]:focus {
+  outline: none;
+  box-shadow: 4px 4px 0 var(--brand-secondary);
+  transform: translate(-1px, -1px);
+}
+.radio-group {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.radio-group label {
+  flex-direction: row;
+  align-items: center;
+  font-size: 14px;
+  cursor: pointer;
+}
+.radio-group input[type="radio"] {
+  width: 18px; height: 18px;
+  accent-color: var(--brand-primary);
+  margin-right: 4px;
+}
+
 @media (max-width: 768px) {
   .app-container { padding: 40px 16px; }
   .header h1 { font-size: 34px; }
@@ -647,11 +691,13 @@ body {
     <button class="tab-btn active" data-tab="tab-library">游戏收藏</button>
     <button class="tab-btn" data-tab="tab-matches">匹配排行</button>
     <button class="tab-btn" data-tab="tab-strangers">陌生玩伴</button>
+    <button class="tab-btn" data-tab="tab-custom">自定义匹配</button>
   </div>
 
   <div class="tab-content active" id="tab-library"><div id="libraryContent"></div></div>
   <div class="tab-content" id="tab-matches"><div id="matchesContent"></div></div>
   <div class="tab-content" id="tab-strangers"><div id="strangersContent"></div></div>
+  <div class="tab-content" id="tab-custom"><div id="customContent"></div></div>
   <div class="tab-content" id="tab-detail"><div id="detailContent"></div></div>
 </div>
 
