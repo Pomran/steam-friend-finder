@@ -39,12 +39,22 @@ async function apiFetch(endpoint, params) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  // Clear any previously saved default
-  if (typeof chrome !== 'undefined' && chrome.storage) {
-    chrome.storage.local.remove('steamId');
-  }
+  // Load saved API key
+  const saved = localStorage.getItem('steamApiKey');
+  if (saved) document.getElementById('apiKey').value = saved;
   // event listeners
   document.getElementById('fetchBtn').addEventListener('click', startFetch);
+  document.getElementById('apiToggle').addEventListener('click', () => {
+    const s = document.getElementById('apiSection');
+    s.style.display = s.style.display === 'none' ? 'block' : 'none';
+  });
+  document.getElementById('saveApiKeyBtn').addEventListener('click', () => {
+    const key = document.getElementById('apiKey').value.trim();
+    if (!key) { showToast('请输入 API 密钥'); return; }
+    localStorage.setItem('steamApiKey', key);
+    document.getElementById('apiSection').style.display = 'none';
+    showToast('API 密钥已保存');
+  });
   document.getElementById('tabs').addEventListener('click', (e) => {
     const btn = e.target.closest('.tab-btn');
     if (btn) switchTab(btn.dataset.tab);
@@ -109,8 +119,9 @@ async function startFetch() {
   const steamInput = document.getElementById('steamId').value.trim();
   const fetchBtn = document.getElementById('fetchBtn');
   if (!steamInput) { showError('请填写 Steam ID'); return; }
-  const apiKey = document.getElementById('apiKey').value.trim();
-  if (!apiKey) { showError('请先填写下方的 Steam API 密钥'); return; }
+  let apiKey = document.getElementById('apiKey').value.trim();
+  if (!apiKey) apiKey = localStorage.getItem('steamApiKey') || '';
+  if (!apiKey) { showError('请先点击「配置 Steam API 密钥」并填写保存'); return; }
   fetchBtn.disabled = true;
   showProgress('正在获取游戏数据...', 10); await yieldToPaint();
 

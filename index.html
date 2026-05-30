@@ -555,16 +555,22 @@ body {
         <button class="btn btn-primary" id="fetchBtn">开始扫描</button>
       </div>
     </div>
-    <div style="margin-top:20px;padding-top:18px;border-top:2px dashed #cbd5e1;">
+    <div style="text-align:center;margin-top:14px;font-size:13px;color:var(--text-muted);font-weight:600;">
+      <span id="apiToggle" style="cursor:pointer;text-decoration:underline dotted;">配置 Steam API 密钥</span>
+    </div>
+    <div id="apiSection" style="display:none;margin-top:16px;padding-top:16px;border-top:2px dashed #cbd5e1;">
       <div class="config-group">
         <label>Steam API 密钥</label>
-        <input type="text" id="apiKey" placeholder="请粘贴你的 Steam API 密钥">
+        <div style="display:flex;gap:12px;">
+          <input type="text" id="apiKey" placeholder="请粘贴你的 Steam API 密钥" style="flex:1;">
+          <button class="btn btn-ghost" id="saveApiKeyBtn" style="padding:18px 24px;flex-shrink:0;">保存</button>
+        </div>
         <div class="hint">
           <div style="font-weight:800;margin-bottom:6px;">使用前需要先申请 Steam API 密钥：</div>
           1. 打开 <a href="https://steamcommunity.com/dev/apikey" target="_blank">Steam API Key 注册页</a>，登录你的 Steam 账号<br>
           2. 在「Domain Name」栏随便填一个网址，比如 <code style="background:#e2e8f0;padding:1px 6px;border-radius:4px;border:1.5px solid var(--border-thick);font-size:12px;font-weight:800;">localhost</code><br>
           3. 勾选同意条款，点击「Register」<br>
-          4. 页面会显示一串密钥（格式类似 <code style="background:#e2e8f0;padding:1px 6px;border-radius:4px;border:1.5px solid var(--border-thick);font-size:12px;font-weight:800;">ABCDEF123456789...</code>），<strong>复制粘贴到上方输入框即可使用</strong>
+          4. 页面会显示一串密钥，<strong>复制粘贴到上方输入框点击「保存」即可</strong>
         </div>
       </div>
     </div>
