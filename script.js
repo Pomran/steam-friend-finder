@@ -22,6 +22,18 @@ function steamApiUrl(endpoint, params) {
 const apiCache = new Map();
 const CACHE_TTL = 10 * 60 * 1000;
 
+function getExcludedSet() {
+  try { return new Set(JSON.parse(localStorage.getItem('excludedGames') || '[]')); } catch { return new Set(); }
+}
+function saveExcludedSet(s) { localStorage.setItem('excludedGames', JSON.stringify([...s])); }
+function isExcluded(appid) { return getExcludedSet().has(appid); }
+function toggleExcluded(appid) {
+  const s = getExcludedSet();
+  if (s.has(appid)) s.delete(appid); else s.add(appid);
+  saveExcludedSet(s);
+  return s.has(appid);
+}
+
 async function apiFetch(endpoint, params) {
   const url = steamApiUrl(endpoint, params);
   const cached = apiCache.get(url);
@@ -201,7 +213,8 @@ async function fetchPlayerSummaries(steamids, apiKey) {
 }
 
 function getTopGames(games, n = TOP_N) {
-  return [...games].filter(g => (g.playtime_forever || 0) > 0)
+  const excluded = getExcludedSet();
+  return [...games].filter(g => (g.playtime_forever || 0) > 0 && !excluded.has(g.appid))
     .sort((a, b) => (b.playtime_forever || 0) - (a.playtime_forever || 0))
     .slice(0, n);
 }
@@ -361,6 +374,7 @@ function renderLibrary() {
   const top5 = state.playerTopGames;
   const all = state.playerGames;
   const totalH = Math.round(all.reduce((s,g) => s+(g.playtime_forever||0), 0) / 60);
+  const excluded = getExcludedSet();
 
   document.getElementById('libraryContent').innerHTML = `
     <div class="stats-grid">
@@ -369,29 +383,53 @@ function renderLibrary() {
       <div class="stat-item"><div class="stat-value">${top5.length}</div><div class="stat-label">已分析</div></div>
     </div>
     <div class="card">
-      <div class="card-title">我的 Top ${TOP_N}</div>
+      <div class="card-title">
+        <span>我的 Top ${TOP_N}</span>
+        <span id="toggleExcludeMode" style="margin-left:auto;font-size:12px;cursor:pointer;color:var(--text-muted);text-decoration:underline dotted;">排除游戏</span>
+      </div>
       ${top5.length ? top5.map((g, i) => {
         const h = Math.round((g.playtime_forever||0)/60);
         const iconUrl = g.img_icon_url ? `https://media.steampowered.com/steamcommunity/public/images/apps/${g.appid}/${g.img_icon_url}.jpg` : '';
-        return `<div class="game-row">
+        const exc = excluded.has(g.appid);
+        return `<div class="game-row" style="${exc ? 'opacity:0.4;' : ''}">
           ${iconUrl ? `<div class="game-icon"><img src="${iconUrl}" class="lib-icon" alt=""></div>` : `<div class="game-icon" style="background:var(--surface);display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:12px;font-weight:800;">?</div>`}
           <span style="width:18px;font-size:12px;color:var(--text-muted);font-weight:600;text-align:center;">${i+1}</span>
-          <span class="game-name">${g.name}</span>
+          <span class="game-name" style="${exc ? 'text-decoration:line-through;' : ''}">${g.name}</span>
           <span style="color:var(--brand-primary);font-weight:600;font-size:13px;">${h}h</span>
+          <span class="exclude-btn" data-appid="${g.appid}" style="margin-left:8px;cursor:pointer;font-size:14px;font-weight:800;color:${exc ? 'var(--text-muted)' : 'var(--text-muted)'};">${exc ? '取消排除' : '排除'}</span>
         </div>`;
       }).join('') : '<div style="color:var(--text-dim);padding:20px;text-align:center;">暂无游戏数据</div>'}
     </div>
-    <div class="card"><div class="card-title">全部游戏 (${all.length})</div><div style="display:flex;flex-wrap:wrap;gap:4px;">${sortedGameChips(all).join('')}</div></div>
+    <div class="card"><div class="card-title">全部游戏 (${all.length})</div><div style="display:flex;flex-wrap:wrap;gap:4px;">${sortedGameChips(all, excluded).join('')}</div></div>
   `;
   document.querySelectorAll('img.lib-icon').forEach(img => {
     img.addEventListener('error', () => { img.style.display = 'none'; });
   });
+  document.querySelectorAll('.exclude-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      toggleExcluded(+btn.dataset.appid);
+      state.playerTopGames = getTopGames(state.playerGames, TOP_N);
+      renderLibrary();
+      renderMatches();
+      switchTab('tab-library');
+    });
+  });
+  document.querySelectorAll('.game-chip').forEach(el => {
+    el.addEventListener('click', () => {
+      toggleExcluded(+el.dataset.appid);
+      state.playerTopGames = getTopGames(state.playerGames, TOP_N);
+      renderLibrary();
+      renderMatches();
+      switchTab('tab-library');
+    });
+  });
 }
 
-function sortedGameChips(games) {
+function sortedGameChips(games, excluded) {
   return [...games].sort((a,b)=>(b.playtime_forever||0)-(a.playtime_forever||0)).map(g => {
     const h = Math.round((g.playtime_forever||0)/60);
-    return `<span style="display:inline-block;background:var(--surface);padding:4px 10px;border-radius:6px;font-size:11px;border:2px solid var(--border-thick);margin:2px;">${g.name} <span style="color:var(--text-muted);">${h}h</span></span>`;
+    const exc = excluded && excluded.has(g.appid);
+    return `<span class="game-chip" data-appid="${g.appid}" style="display:inline-block;background:${exc?'#fee2e2':'var(--surface)'};padding:4px 10px;border-radius:6px;font-size:11px;border:2px solid var(--border-thick);margin:2px;cursor:pointer;text-decoration:${exc?'line-through':'none'};opacity:${exc?0.5:1};">${g.name} <span style="color:var(--text-muted);">${h}h</span></span>`;
   });
 }
 
