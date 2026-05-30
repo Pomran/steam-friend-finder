@@ -10,7 +10,7 @@ const TOP_N = 5;
 const _k = "314BA61A8A54D175F41CA4FF0097EEB1";
 const DEFAULT_API_KEY = _k.split('').reverse().join('');
 
-const PROXY_BASE = ''; // 留空=扩展模式；网页模式填入 Cloudflare Worker 地址如 https://cors.你的域名.workers.dev
+const PROXY_BASE = 'https://steam-friend-finder-proxy.beone311.workers.dev';
 
 function proxyUrl(url) {
   return PROXY_BASE ? `${PROXY_BASE}?url=${encodeURIComponent(url)}` : url;
