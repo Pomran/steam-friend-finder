@@ -518,6 +518,68 @@ body {
 .footer a:hover { text-decoration: underline; }
 .footer .sep { margin: 0 8px; color: var(--text-muted); }
 
+.stranger-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.stranger-toggle-desc {
+  flex: 1;
+  font-size: 14px;
+  color: var(--text-dim);
+  line-height: 1.6;
+  font-weight: 600;
+}
+
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 52px;
+  height: 28px;
+  flex-shrink: 0;
+}
+.switch input { opacity: 0; width: 0; height: 0; }
+.switch-slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background: #cbd5e1;
+  border: 2.5px solid var(--border-thick);
+  border-radius: 100px;
+  transition: 0.2s;
+}
+.switch-slider::before {
+  content: "";
+  position: absolute;
+  height: 20px;
+  width: 20px;
+  left: 2px;
+  bottom: 2px;
+  background: white;
+  border: 2px solid var(--border-thick);
+  border-radius: 50%;
+  transition: 0.2s;
+}
+.switch input:checked + .switch-slider {
+  background: var(--brand-success);
+}
+.switch input:checked + .switch-slider::before {
+  transform: translateX(22px);
+}
+
+.stranger-badge {
+  display: inline-block;
+  background: var(--brand-purple);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 900;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 2px solid var(--border-thick);
+  margin-left: 8px;
+  letter-spacing: 0.3px;
+}
+
 @media (max-width: 768px) {
   .app-container { padding: 40px 16px; }
   .header h1 { font-size: 34px; }
@@ -584,10 +646,12 @@ body {
   <div class="tabs" id="tabs" style="display:none;">
     <button class="tab-btn active" data-tab="tab-library">游戏收藏</button>
     <button class="tab-btn" data-tab="tab-matches">匹配排行</button>
+    <button class="tab-btn" data-tab="tab-strangers">陌生玩伴</button>
   </div>
 
   <div class="tab-content active" id="tab-library"><div id="libraryContent"></div></div>
   <div class="tab-content" id="tab-matches"><div id="matchesContent"></div></div>
+  <div class="tab-content" id="tab-strangers"><div id="strangersContent"></div></div>
   <div class="tab-content" id="tab-detail"><div id="detailContent"></div></div>
 </div>
 

@@ -4,7 +4,12 @@ const state = {
   playerTopGames: [],
   friendsData: [],
   mySteamId: null, myApiKey: null,
+  myProfile: null,
+  strangersData: null,
+  strangersError: null,
 };
+
+const STRANGER_API_BASE = '';
 
 const TOP_N = 5;
 
@@ -71,7 +76,10 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('tabs').addEventListener('click', (e) => {
     const btn = e.target.closest('.tab-btn');
-    if (btn) switchTab(btn.dataset.tab);
+    if (btn) {
+      switchTab(btn.dataset.tab);
+      if (btn.dataset.tab === 'tab-strangers') loadStrangers();
+    }
   });
   document.getElementById('matchesContent').addEventListener('click', (e) => {
     const card = e.target.closest('.friend-card');
@@ -142,6 +150,9 @@ async function startFetch() {
   try {
     const steamId = await resolveSteamId(steamInput, apiKey);
     state.mySteamId = steamId; state.myApiKey = apiKey;
+    showProgress('正在获取个人资料...', 15); await yieldToPaint();
+    const mySummary = await fetchPlayerSummaries([steamId], apiKey);
+    state.myProfile = (mySummary && mySummary[0]) || null;
     showProgress('正在获取游戏库...', 20); await yieldToPaint();
     const games = await fetchOwnedGames(steamId, apiKey);
     state.playerGames = games;
@@ -154,6 +165,10 @@ async function startFetch() {
     switchTab('tab-library');
     updateProgress(100);
     hideProgress(500);
+    // auto re-opt-in if previously opted in
+    if (localStorage.getItem('strangerOptIn') === 'true') {
+      await callStrangerOptIn(true);
+    }
     // save steamId to chrome.storage
     if (typeof chrome !== 'undefined' && chrome.storage) {
       chrome.storage.local.set({ steamId: steamInput });
@@ -438,6 +453,7 @@ function renderMatches() {
   const f = state.friendsData;
   if (!f.length) { el.innerHTML = `<div class="empty"><p>暂无好友数据</p></div>`; return; }
   const best = f.reduce((a,b) => a.score > b.score ? a : b);
+  const optIn = localStorage.getItem('strangerOptIn') === 'true';
   el.innerHTML = `
     <div class="stats-grid">
       <div class="stat-item"><div class="stat-value">${f.length}</div><div class="stat-label">好友分析</div></div>
@@ -445,7 +461,22 @@ function renderMatches() {
       <div class="stat-item"><div class="stat-value" style="color:var(--brand-yellow);">${(best.score*100).toFixed(1)}%</div><div class="stat-label">最高匹配</div></div>
     </div>
     <div class="card"><div class="card-title">匹配排行</div><div class="friend-list">${f.map((x, i) => renderPersonCard(x, i)).join('')}</div></div>
+    <div class="card" id="strangerOptInCard">
+      <div class="card-title" style="font-size:16px;">对陌生人开放匹配</div>
+      <div class="stranger-toggle-row">
+        <div class="stranger-toggle-desc">开启后，其他使用本工具的用户将能看到你的 Top5 游戏数据并计算匹配度。你的 Steam ID 和个人资料仅用于展示。</div>
+        <label class="switch">
+          <input type="checkbox" id="strangerToggle" ${optIn ? 'checked' : ''}>
+          <span class="switch-slider"></span>
+        </label>
+      </div>
+    </div>
   `;
+  document.getElementById('strangerToggle').addEventListener('change', async (e) => {
+    const on = e.target.checked;
+    localStorage.setItem('strangerOptIn', on ? 'true' : 'false');
+    await callStrangerOptIn(on);
+  });
 }
 
 function renderPersonCard(person, rank) {
@@ -584,4 +615,125 @@ function showError(msg) {
   document.getElementById('detailContent').innerHTML = `<div class="error">${msg}${extra}</div>`;
   switchTab('tab-detail');
   document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+}
+
+async function callStrangerOptIn(optIn) {
+  const p = state.myProfile;
+  if (!p || !state.mySteamId || !state.playerTopGames.length) {
+    if (optIn) showToast('请先完成扫描');
+    return;
+  }
+  try {
+    const res = await fetch(`${STRANGER_API_BASE}/api/opt-in`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        steamid: state.mySteamId,
+        personaname: p.personaname || '',
+        avatar: p.avatarfull || p.avatarmedium || '',
+        top5: state.playerTopGames.map(g => ({
+          appid: g.appid, name: g.name,
+          img_icon_url: g.img_icon_url || '',
+          playtime_forever: g.playtime_forever || 0,
+        })),
+        opt_in: optIn,
+      }),
+    });
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      throw new Error(e.error || `HTTP ${res.status}`);
+    }
+    showToast(optIn ? '已开放陌生人匹配' : '已关闭陌生人匹配');
+  } catch (err) {
+    showToast('陌生人匹配暂时不可用');
+    console.warn('Stranger opt-in failed:', err);
+  }
+}
+
+async function loadStrangers() {
+  const el = document.getElementById('strangersContent');
+  if (!state.mySteamId) {
+    el.innerHTML = `<div class="empty"><p>请先完成扫描</p></div>`;
+    return;
+  }
+  el.innerHTML = `<div class="loading"><div class="spinner"></div><p>正在寻找陌生玩伴...</p></div>`;
+  try {
+    const res = await fetch(`${STRANGER_API_BASE}/api/strangers?steamid=${encodeURIComponent(state.mySteamId)}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    state.strangersData = data || [];
+    state.strangersError = null;
+  } catch (err) {
+    state.strangersData = null;
+    state.strangersError = err.message || '网络错误';
+    console.warn('Load strangers failed:', err);
+  }
+  renderStrangers();
+}
+
+function renderStrangers() {
+  const el = document.getElementById('strangersContent');
+  if (state.strangersError) {
+    el.innerHTML = `<div class="card"><div class="card-title">陌生人匹配</div><div class="error">陌生人匹配暂时不可用</div></div>`;
+    return;
+  }
+  const strangers = state.strangersData;
+  if (!strangers || !strangers.length) {
+    el.innerHTML = `<div class="empty"><p>暂无其他玩家开启陌生人匹配</p></div>`;
+    return;
+  }
+  const myTop5 = state.playerTopGames;
+  const scored = strangers.map(s => ({
+    ...s,
+    score: computeStrangerMatchScore(myTop5, s.top5 || []),
+  })).sort((a, b) => b.score - a.score);
+  el.innerHTML = `
+    <div class="stats-grid">
+      <div class="stat-item"><div class="stat-value">${scored.length}</div><div class="stat-label">陌生玩伴</div></div>
+      <div class="stat-item"><div class="stat-value">${scored.filter(x => x.score > 0.3).length}</div><div class="stat-label">高度匹配</div></div>
+      <div class="stat-item"><div class="stat-value" style="color:var(--brand-purple);">${(scored[0].score * 100).toFixed(1)}%</div><div class="stat-label">最佳匹配</div></div>
+    </div>
+    <div class="card"><div class="card-title">陌生玩伴 <span class="stranger-badge">陌生人</span></div><div class="friend-list">${scored.map((s, i) => renderStrangerCard(s, i)).join('')}</div></div>
+  `;
+}
+
+function renderStrangerCard(person, rank) {
+  const pct = (person.score * 100).toFixed(1);
+  const name = person.personaname || person.steamid;
+  const avatar = person.avatar || '';
+  const dot = (person.top5 || []).map(g => {
+    const owns = state.playerTopGames.some(pg => pg.appid === g.appid);
+    return `<span class="top5-dot ${owns ? 'owned' : 'missing'}" title="${g.name}">${owns ? '✓' : '–'}</span>`;
+  }).join('');
+  return `<div class="friend-card" style="animation-delay:${(rank || 0) * 0.04}s;cursor:default;">
+    <div class="friend-avatar">${avatar ? `<img src="${avatar}" alt="">` : `<div class="placeholder">${name[0]}</div>`}</div>
+    <div class="friend-info">
+      <div class="friend-name">${name} <span class="stranger-badge">陌生人</span></div>
+      <div class="friend-meta" style="margin-top:2px;">Top5 游戏 ${(person.top5 || []).length} 款</div>
+      <div class="top5-dots">${dot}</div>
+    </div>
+    <div class="friend-score-col">
+      <div class="score-value" style="color:${scoreColor(parseFloat(pct))}">${pct}%</div>
+      <div class="score-bar"><div class="score-bar-fill" style="width:${pct}%;background:${scoreColor(parseFloat(pct))}"></div></div>
+    </div>
+  </div>`;
+}
+
+function computeStrangerMatchScore(myTop5, strangerTop5) {
+  if (!myTop5 || !myTop5.length || !strangerTop5 || !strangerTop5.length) return 0;
+  const sMap = {};
+  strangerTop5.forEach(g => { sMap[g.appid] = g; });
+  let weightedSum = 0, maxWeight = 0, matched = 0;
+  for (let i = 0; i < myTop5.length; i++) {
+    const pg = myTop5[i];
+    const w = TOP_N - i;
+    maxWeight += w;
+    const sg = sMap[pg.appid];
+    if (!sg) continue;
+    matched++;
+    const pT = pg.playtime_forever || 0;
+    const sT = sg.playtime_forever || 0;
+    weightedSum += w * (1 - Math.abs(pT - sT) / (pT + sT + 1));
+  }
+  return Math.min(((weightedSum / maxWeight) * 0.6 + (matched / TOP_N) * 0.4) * 1.3, 1.0);
 }
