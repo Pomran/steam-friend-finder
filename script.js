@@ -83,11 +83,21 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('matchesContent').addEventListener('click', (e) => {
     const card = e.target.closest('.friend-card');
-    if (card) showPersonDetail(card.dataset.steamid);
+    if (card && card.dataset.steamid) showPersonDetail(card.dataset.steamid);
+  });
+  document.getElementById('strangersContent').addEventListener('click', (e) => {
+    const card = e.target.closest('.friend-card');
+    if (card && card.dataset.steamid) showStrangerDetail(card.dataset.steamid);
   });
   document.getElementById('detailContent').addEventListener('click', (e) => {
-    if (e.target.id === 'backBtn') switchTab('tab-matches');
+    if (e.target.id === 'backBtn') {
+      switchTab(state._detailSource === 'strangers' ? 'tab-strangers' : 'tab-matches');
+    }
     if (e.target.id === 'shareDetailBtn') shareDetailResults();
+    if (e.target.id === 'addFriendBtn') {
+      const steamid = state._detailSteamId;
+      if (steamid) window.open(`https://steamcommunity.com/profiles/${steamid}`, '_blank');
+    }
   });
 });
 
@@ -517,6 +527,7 @@ function renderPersonCard(person, rank) {
 function showPersonDetail(steamid) {
   const p = state.friendsData.find(f => f.steamid === steamid); if (!p) return;
   state._detailSteamId = steamid;
+  state._detailSource = 'matches';
   switchTab('tab-detail');
   const name = p.summary?.personaname || steamid;
   const avatar = p.summary?.avatarfull || p.summary?.avatarmedium || '';
@@ -712,7 +723,7 @@ function renderStrangerCard(person, rank) {
     const owns = state.playerTopGames.some(pg => pg.appid === g.appid);
     return `<span class="top5-dot ${owns ? 'owned' : 'missing'}" title="${g.name}">${owns ? '✓' : '–'}</span>`;
   }).join('');
-  return `<div class="friend-card" style="animation-delay:${(rank || 0) * 0.04}s;cursor:default;">
+  return `<div class="friend-card" data-steamid="${person.steamid}" style="animation-delay:${(rank || 0) * 0.04}s;">
     <div class="friend-avatar">${avatar ? `<img src="${avatar}" alt="">` : `<div class="placeholder">${name[0]}</div>`}</div>
     <div class="friend-info">
       <div class="friend-name">${name} <span class="stranger-badge">陌生人</span></div>
@@ -724,6 +735,69 @@ function renderStrangerCard(person, rank) {
       <div class="score-bar"><div class="score-bar-fill" style="width:${pct}%;background:${scoreColor(parseFloat(pct))}"></div></div>
     </div>
   </div>`;
+}
+
+function showStrangerDetail(steamid) {
+  const sd = state.strangersData;
+  const p = sd && sd.find(s => s.steamid === steamid);
+  if (!p || !state.playerTopGames.length) return;
+  state._detailSteamId = steamid;
+  state._detailSource = 'strangers';
+  switchTab('tab-detail');
+  const name = p.personaname || steamid;
+  const avatar = p.avatar || '';
+  const myTop5 = state.playerTopGames;
+  const sTop5 = p.top5 || [];
+  const sMap = {}; sTop5.forEach(g => { sMap[g.appid] = g; });
+  const matchCount = myTop5.filter(g => sMap[g.appid]).length;
+  const pct = computeStrangerMatchScore(myTop5, sTop5);
+  const pctStr = (pct * 100).toFixed(1);
+  const dc = document.getElementById('detailContent');
+  dc.innerHTML = `
+    <div class="detail-header">
+      <div class="detail-avatar">${avatar ? `<img src="${avatar}" alt="">` : `<div class="placeholder">${name[0]}</div>`}</div>
+      <div class="detail-info">
+        <h2>${name}</h2>
+        <div class="match-badge">${pctStr}% 匹配 · Top5 重合 ${matchCount}/${TOP_N}</div>
+      </div>
+      <button class="btn btn-share" id="addFriendBtn" style="font-size:13px;padding:8px 16px;background:var(--brand-secondary);color:#fff;">添加好友</button>
+      <button class="btn btn-ghost" id="backBtn">← 返回</button>
+    </div>
+    <div class="detail-body">
+      <div class="card">
+        <div class="card-title">双方 Top${TOP_N} 时长对比</div>
+        ${myTop5.map((g) => {
+          const pT = g.playtime_forever || 0;
+          const sT = (sMap[g.appid]?.playtime_forever) || 0;
+          const has = sMap[g.appid];
+          return `<div class="game-row">
+            <span style="width:24px;height:24px;border-radius:6px;overflow:hidden;flex-shrink:0;background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:${has ? 'var(--brand-success)' : 'var(--text-muted)'}">${has ? '✓' : '✕'}</span>
+            <span class="game-name">${g.name}</span>
+            <div class="game-hours-compare">
+              <span><span class="hour-dot me"></span>${Math.round(pT / 60)}h</span>
+              <span><span class="hour-dot them"></span>${Math.round(sT / 60)}h</span>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+      <div class="card">
+        <div class="card-title">对方 Top${TOP_N}</div>
+        ${sTop5.length ? sTop5.map((g, i) => {
+          const h = Math.round((g.playtime_forever || 0) / 60);
+          const iconUrl = g.img_icon_url ? `https://media.steampowered.com/steamcommunity/public/images/apps/${g.appid}/${g.img_icon_url}.jpg` : '';
+          return `<div class="game-row">
+            ${iconUrl ? `<div class="game-icon"><img src="${iconUrl}" alt="" style="width:100%;height:100%;object-fit:cover;"></div>` : `<div class="game-icon" style="background:var(--surface);display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:10px;font-weight:800;">${i + 1}</div>`}
+            <span class="game-name">${g.name}</span>
+            <span style="color:var(--brand-yellow);font-weight:600;font-size:13px;">${h}h</span>
+          </div>`;
+        }).join('') : '<div style="color:var(--text-dim);padding:12px;text-align:center;">暂无数据</div>'}
+      </div>
+    </div>
+    <div class="card" style="text-align:center;">
+      <p style="font-size:14px;color:var(--text-dim);margin-bottom:16px;font-weight:600;">点击下方按钮前往 Steam 添加好友</p>
+      <a href="https://steamcommunity.com/profiles/${steamid}" target="_blank" class="btn btn-primary" style="text-decoration:none;display:inline-flex;">前往 Steam 添加好友</a>
+    </div>
+  `;
 }
 
 function computeStrangerMatchScore(myTop5, strangerTop5) {
