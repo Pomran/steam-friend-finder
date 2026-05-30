@@ -10,9 +10,15 @@ const TOP_N = 5;
 const _k = "314BA61A8A54D175F41CA4FF0097EEB1";
 const DEFAULT_API_KEY = _k.split('').reverse().join('');
 
+const PROXY_BASE = ''; // 留空=扩展模式；网页模式填入 Cloudflare Worker 地址如 https://cors.你的域名.workers.dev
+
+function proxyUrl(url) {
+  return PROXY_BASE ? `${PROXY_BASE}?url=${encodeURIComponent(url)}` : url;
+}
+
 function steamApiUrl(endpoint, params) {
   const qs = Object.entries(params).map(([k,v]) => `${k}=${encodeURIComponent(v)}`).join('&');
-  return `https://api.steampowered.com${endpoint}?${qs}`;
+  return proxyUrl(`https://api.steampowered.com${endpoint}?${qs}`);
 }
 
 async function apiFetch(endpoint, params) {
@@ -230,7 +236,7 @@ async function loadIcon(appid, iconUrl) {
   if (!iconUrl) return null;
   const url = `https://media.steampowered.com/steamcommunity/public/images/apps/${appid}/${iconUrl}.jpg`;
   try {
-    const res = await fetch(url);
+    const res = await fetch(proxyUrl(url));
     if (!res.ok) return null;
     const blob = await res.blob();
     const blobUrl = URL.createObjectURL(blob);
@@ -337,7 +343,7 @@ async function captureAndFooter(el, scale, title) {
     const letter = (img.alt && img.alt[0]) || '?';
     img.removeAttribute('srcset');
     try {
-      const r=await fetch(img.src);
+      const r=await fetch(proxyUrl(img.src));
       if (r.ok) {
         const b=await r.blob();
         img.src = URL.createObjectURL(b);
