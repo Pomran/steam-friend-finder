@@ -551,9 +551,20 @@ body {
           支持格式：数字ID，或者完整主页链接直接粘贴
         </div>
       </div>
-      <div class="config-group" style="flex:0 0 auto; width: auto;">
-        <label style="opacity: 0; max-height: 15px; display: block; margin-bottom: 14px;">占位</label>
+      <div class="config-group" style="flex:0 0 auto; width: auto; display: flex; flex-direction: column; justify-content: flex-end;">
         <button class="btn btn-primary" id="fetchBtn">开始扫描</button>
+        <div style="margin-top:10px;font-size:12px;color:var(--text-muted);font-weight:600;text-align:center;">
+          <span id="apiToggle" style="cursor:pointer;text-decoration:underline dotted;">自定义 API 密钥</span>
+        </div>
+      </div>
+    </div>
+    <div id="apiSection" style="display:none;margin-top:16px;padding-top:16px;border-top:2px dashed #cbd5e1;">
+      <div class="config-group">
+        <label>Steam API 密钥 <span style="font-weight:600;color:var(--text-muted);font-size:12px;">（可选，留空使用内置密钥）</span></label>
+        <input type="text" id="apiKey" placeholder="留空则使用内置密钥">
+        <div class="hint">
+          如需自定义密钥，前往 <a href="https://steamcommunity.com/dev/apikey" target="_blank">Steam API Key 注册页</a>（登录后页面会显示你的密钥），复制粘贴即可。
+        </div>
       </div>
     </div>
   </div>

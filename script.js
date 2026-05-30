@@ -39,6 +39,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   // event listeners
   document.getElementById('fetchBtn').addEventListener('click', startFetch);
+  document.getElementById('apiToggle').addEventListener('click', () => {
+    const s = document.getElementById('apiSection');
+    s.style.display = s.style.display === 'none' ? 'block' : 'none';
+  });
   document.getElementById('tabs').addEventListener('click', (e) => {
     const btn = e.target.closest('.tab-btn');
     if (btn) switchTab(btn.dataset.tab);
@@ -103,18 +107,20 @@ async function startFetch() {
   const steamInput = document.getElementById('steamId').value.trim();
   const fetchBtn = document.getElementById('fetchBtn');
   if (!steamInput) { showError('请填写 Steam ID'); return; }
+  const customKey = document.getElementById('apiKey').value.trim();
+  const apiKey = customKey || DEFAULT_API_KEY;
   fetchBtn.disabled = true;
   showProgress('正在获取游戏数据...', 10); await yieldToPaint();
 
   try {
-    const steamId = await resolveSteamId(steamInput, DEFAULT_API_KEY);
-    state.mySteamId = steamId; state.myApiKey = DEFAULT_API_KEY;
+    const steamId = await resolveSteamId(steamInput, apiKey);
+    state.mySteamId = steamId; state.myApiKey = apiKey;
     showProgress('正在获取游戏库...', 20); await yieldToPaint();
-    const games = await fetchOwnedGames(steamId, DEFAULT_API_KEY);
+    const games = await fetchOwnedGames(steamId, apiKey);
     state.playerGames = games;
     state.playerTopGames = getTopGames(games, TOP_N);
     showProgress(`已获取 ${games.length} 款游戏，正在分析好友...`, 40); await yieldToPaint();
-    await fetchFriendMatches(steamId, DEFAULT_API_KEY);
+    await fetchFriendMatches(steamId, apiKey);
     showProgress('正在生成报告...', 90);
     renderLibrary(); renderMatches();
     document.getElementById('tabs').style.display = 'flex';
