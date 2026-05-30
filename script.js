@@ -3,6 +3,7 @@ const state = {
   playerGames: [],
   playerTopGames: [],
   friendsData: [],
+  scanWarnings: [],
   mySteamId: null, myApiKey: null,
 };
 
@@ -21,13 +22,174 @@ function steamApiUrl(endpoint, params) {
   return proxyUrl(`https://api.steampowered.com${endpoint}?${qs}`);
 }
 
+class SteamApiError extends Error {
+  constructor({ status, title, message, detail, action, endpoint, retryAfter }) {
+    super(message);
+    this.name = 'SteamApiError';
+    this.status = status;
+    this.title = title;
+    this.detail = detail;
+    this.action = action;
+    this.endpoint = endpoint;
+    this.retryAfter = retryAfter;
+  }
+}
+
+function createUserError(title, message, action, detail = '') {
+  const err = new Error(message);
+  err.title = title;
+  err.action = action;
+  err.detail = detail;
+  return err;
+}
+
+function explainEResult(value) {
+  const code = Number(value);
+  const common = {
+    1: '成功',
+    2: '通用失败',
+    3: '无法连接到 Steam 后端',
+    8: '参数不正确',
+    15: '访问被拒绝',
+    16: '操作超时',
+    18: '账号不存在',
+    19: 'Steam ID 无效',
+    20: '请求的服务当前不可用',
+    24: '权限不足',
+    25: '超过限制',
+    42: '没有找到匹配结果',
+    79: 'Steam 返回了非预期错误',
+    84: '临时频率限制，稍后重试',
+    95: '账号访问该资源次数过多',
+    96: '账号操作过于频繁',
+    105: 'IP 被禁止执行该操作',
+  };
+  return Number.isFinite(code) && common[code] ? `EResult ${code}: ${common[code]}` : '';
+}
+
+function explainSteamStatus(status, endpoint, detail, retryAfter, eresult) {
+  const endpointName = endpoint.includes('GetFriendList') ? '好友列表'
+    : endpoint.includes('GetOwnedGames') ? '游戏库'
+    : endpoint.includes('GetPlayerSummaries') ? '好友资料'
+    : endpoint.includes('ResolveVanityURL') ? '自定义主页地址'
+    : 'Steam API';
+  const eresultCode = Number(eresult);
+
+  if (eresultCode === 84) {
+    return {
+      title: '请求过快',
+      message: retryAfter
+        ? `Steam 限制了请求频率，建议等待 ${retryAfter} 秒后重试。`
+        : 'Steam 返回了临时频率限制。',
+      action: '好友很多或好友游戏很多时容易触发。请等待一段时间后再试。',
+    };
+  }
+
+  const common = {
+    400: {
+      title: '请求参数有误',
+      message: `${endpointName}请求参数不完整或格式不正确。`,
+      action: '请检查 Steam ID、主页链接是否完整；如果是自定义主页地址，请确认没有多余空格或中文符号。',
+    },
+    401: {
+      title: endpoint.includes('GetFriendList') ? '好友列表不可见' : 'API Key 无效或未授权',
+      message: endpoint.includes('GetFriendList')
+        ? '该账号的好友列表不是公开状态，Steam 拒绝返回好友数据。'
+        : 'Steam 拒绝了当前请求。',
+      action: endpoint.includes('GetFriendList')
+        ? '请把 Steam 隐私设置中的“好友列表”设为公开后再试。'
+        : '请确认 API Key 没有复制漏字符、没有多余空格；如果仍失败，需要重新申请或重新填写。',
+    },
+    403: {
+      title: '访问被拒绝',
+      message: `${endpointName}暂时无法读取。`,
+      action: endpoint.includes('GetFriendList')
+        ? '官方文档中好友列表私密通常返回 401；如果这里返回 403，更可能是 API Key、IP 白名单或访问权限问题。'
+        : endpoint.includes('GetOwnedGames')
+          ? '常见原因是 API Key 无效、IP 白名单限制，或目标游戏库对当前请求不可见。请先确认“游戏详情”设为公开，再检查 API Key。'
+          : '请确认 API Key 有效，且没有开启不匹配的 IP 白名单。',
+    },
+    404: {
+      title: '接口不存在',
+      message: '当前请求的 Steam API 地址不存在。',
+      action: '这通常是程序里的接口路径写错或 Steam 接口调整，需要更新代码。',
+    },
+    405: {
+      title: '请求方式不支持',
+      message: '当前接口不接受这种请求方式。',
+      action: '这通常是程序实现问题，需要检查接口调用方式。',
+    },
+    429: {
+      title: '请求过快',
+      message: retryAfter
+        ? `Steam 限制了请求频率，建议等待 ${retryAfter} 秒后重试。`
+        : 'Steam 限制了请求频率。',
+      action: '好友很多或好友游戏很多时容易触发。请等待一段时间后再试。',
+    },
+    500: {
+      title: 'Steam 服务异常',
+      message: 'Steam 服务器返回了内部错误。',
+      action: '这通常不是你的 Steam ID 问题，请稍后重试。',
+    },
+    502: {
+      title: 'Steam 网关异常',
+      message: 'Steam 上游服务返回异常。',
+      action: '请稍后重试。',
+    },
+    503: {
+      title: 'Steam 服务暂不可用',
+      message: 'Steam API 当前可能繁忙或维护中。',
+      action: '请稍后重试。',
+    },
+    504: {
+      title: 'Steam 响应超时',
+      message: 'Steam API 没有及时返回结果。',
+      action: '请稍后重试；如果好友很多，这类错误可能更容易出现。',
+    },
+  };
+
+  return common[status] || {
+    title: 'Steam API 请求失败',
+    message: `${endpointName}请求失败，HTTP 状态码 ${status}。`,
+    action: '请稍后重试；如果持续失败，请检查 API Key、Steam ID 和资料隐私设置。',
+  };
+}
+
 async function apiFetch(endpoint, params) {
-  const res = await fetch(steamApiUrl(endpoint, params));
+  let res;
+  try {
+    res = await fetch(steamApiUrl(endpoint, params));
+  } catch (e) {
+    throw createUserError(
+      '网络连接失败',
+      '无法连接到 Steam API。',
+      '请检查网络、浏览器扩展权限，或稍后重试。',
+      e.message || ''
+    );
+  }
   if (!res.ok) {
     let detail = '';
-    try { const e = await res.json(); detail = e.error || ''; } catch(e) {}
-    if (res.status === 403) throw new Error('Steam API 请求失败 (403) — 内置密钥可能已失效，请联系作者更新');
-    throw new Error(`Steam API 请求失败 (${res.status})${detail ? ': ' + detail : ''}`);
+    try {
+      const e = await res.json();
+      detail = e.error || e.message || '';
+    } catch(e) {
+      try { detail = await res.text(); } catch (_) {}
+    }
+    const retryAfter = res.headers.get('Retry-After') || '';
+    const eresult = res.headers.get('x-eresult') || '';
+    const errorMessage = res.headers.get('x-error_message') || '';
+    const eresultText = explainEResult(eresult);
+    const extra = [detail, eresultText || (eresult ? `EResult: ${eresult}` : ''), errorMessage].filter(Boolean).join(' · ');
+    const info = explainSteamStatus(res.status, endpoint, extra, retryAfter, eresult);
+    throw new SteamApiError({
+      status: res.status,
+      title: info.title,
+      message: info.message,
+      detail: extra,
+      action: info.action,
+      endpoint,
+      retryAfter,
+    });
   }
   return res.json();
 }
@@ -103,6 +265,7 @@ async function startFetch() {
   const steamInput = document.getElementById('steamId').value.trim();
   const fetchBtn = document.getElementById('fetchBtn');
   if (!steamInput) { showError('请填写 Steam ID'); return; }
+  state.scanWarnings = [];
   fetchBtn.disabled = true;
   showProgress('正在获取游戏数据...', 10); await yieldToPaint();
 
@@ -111,6 +274,13 @@ async function startFetch() {
     state.mySteamId = steamId; state.myApiKey = DEFAULT_API_KEY;
     showProgress('正在获取游戏库...', 20); await yieldToPaint();
     const games = await fetchOwnedGames(steamId, DEFAULT_API_KEY);
+    if (!games.length) {
+      throw createUserError(
+        '游戏库为空或不可见',
+        '没有读取到你的 Steam 游戏库。',
+        '如果你确实有游戏，请在 Steam 隐私设置中把“游戏详情”设为公开；也可能是账号库存为空、API Key 无效，或 Steam 暂时没有返回数据。'
+      );
+    }
     state.playerGames = games;
     state.playerTopGames = getTopGames(games, TOP_N);
     showProgress(`已获取 ${games.length} 款游戏，正在分析好友...`, 40); await yieldToPaint();
@@ -126,7 +296,7 @@ async function startFetch() {
       chrome.storage.local.set({ steamId: steamInput });
     }
   } catch (err) {
-    showError(err.message || '获取数据时出错');
+    showError(err);
     hideProgress();
   } finally { fetchBtn.disabled = false; }
 }
@@ -141,7 +311,15 @@ async function fetchOwnedGames(steamId, apiKey) {
 async function fetchFriendMatches(steamId, apiKey) {
   const d = await apiFetch('/ISteamUser/GetFriendList/v1/', { key: apiKey, steamid: steamId, relationship: 'friend', format: 'json' });
   const friends = (d.friendslist && d.friendslist.friends) || [];
-  if (friends.length === 0) { state.friendsData = []; return; }
+  if (friends.length === 0) {
+    state.friendsData = [];
+    state.scanWarnings.push({
+      title: '没有读取到好友列表',
+      message: '目标账号没有公开好友，或好友数量为 0。',
+      action: '如果你确认有好友，请把 Steam 隐私设置里的“好友列表”设为公开后再试。',
+    });
+    return;
+  }
 
   const friendIds = friends.map(f => f.steamid);
   const summaries = await fetchPlayerSummaries(friendIds, apiKey);
@@ -154,6 +332,14 @@ async function fetchFriendMatches(steamId, apiKey) {
     showProgress(`正在分析好友 ${i+1}/${friendIds.length}: ${summaryMap[fid]?.personaname || fid}...`);
     try {
       const fg = await fetchOwnedGames(fid, apiKey);
+      if (!fg.length) {
+        state.scanWarnings.push({
+          title: '好友游戏库为空或不可见',
+          message: `${summaryMap[fid]?.personaname || fid} 没有返回可分析的游戏数据。`,
+          action: '常见原因是该好友的“游戏详情”未公开，或该好友库存为空。',
+        });
+        continue;
+      }
       const shared = state.playerGames.filter(pg => fg.some(fg2 => fg2.appid === pg.appid)).length;
       const score = computeMatchScore(state.playerTopGames, fg, shared);
       const fTop5 = getTopGames(fg, TOP_N);
@@ -162,7 +348,16 @@ async function fetchFriendMatches(steamId, apiKey) {
         totalHours: fg.reduce((s, g) => s + (g.playtime_forever || 0), 0),
         totalGames: fg.length, source: 'friend',
       });
-    } catch (e) { console.warn(`Failed: ${fid}:`, e); }
+    } catch (e) {
+      if (e.status === 429) throw e;
+      console.warn(`Failed: ${fid}:`, e);
+      state.scanWarnings.push({
+        title: e.title || '好友数据读取失败',
+        message: `${summaryMap[fid]?.personaname || fid}: ${e.message || '无法读取该好友的游戏库。'}`,
+        action: e.action || '常见原因是该好友资料不可见、游戏详情未公开，或 Steam API 临时失败。',
+        detail: e.detail || '',
+      });
+    }
   }
   results.sort((a, b) => b.score - a.score);
   state.friendsData = results;
@@ -422,12 +617,43 @@ function sortedGameChips(games) {
   });
 }
 
+function escapeHtml(value) {
+  return String(value || '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[ch]));
+}
+
+function renderWarningPanel(limit = 6) {
+  const warnings = state.scanWarnings || [];
+  if (!warnings.length) return '';
+  const hidden = Math.max(0, warnings.length - limit);
+  return `
+    <div class="card" style="background:#fffaf0;border-color:var(--brand-yellow);box-shadow:6px 6px 0 var(--brand-yellow);">
+      <div class="card-title">扫描提示 (${warnings.length})</div>
+      <div style="display:grid;gap:12px;">
+        ${warnings.slice(0, limit).map(w => `
+          <div style="padding:14px 16px;background:#fff;border:2.5px solid var(--border-thick);border-radius:16px;">
+            <div style="font-weight:900;color:var(--border-thick);">${escapeHtml(w.title)}</div>
+            <div style="font-size:13px;color:var(--text-dim);font-weight:700;line-height:1.6;margin-top:6px;">${escapeHtml(w.message)}</div>
+            ${w.action ? `<div style="font-size:12px;color:var(--text-muted);font-weight:700;line-height:1.6;margin-top:6px;">${escapeHtml(w.action)}</div>` : ''}
+          </div>
+        `).join('')}
+        ${hidden ? `<div style="text-align:center;color:var(--text-muted);font-size:12px;font-weight:800;">还有 ${hidden} 条类似提示未展开</div>` : ''}
+      </div>
+    </div>
+  `;
+}
+
 function renderMatches() {
   const el = document.getElementById('matchesContent');
   const f = state.friendsData;
-  if (!f.length) { el.innerHTML = `<div class="empty"><p>暂无好友数据</p></div>`; return; }
+  if (!f.length) {
+    el.innerHTML = `${renderWarningPanel(10)}<div class="empty"><p>暂无可分析的好友数据</p></div>`;
+    return;
+  }
   const best = f.reduce((a,b) => a.score > b.score ? a : b);
   el.innerHTML = `
+    ${renderWarningPanel()}
     <div class="stats-grid">
       <div class="stat-item"><div class="stat-value">${f.length}</div><div class="stat-label">好友分析</div></div>
       <div class="stat-item"><div class="stat-value">${f.filter(x=>x.score>0.3).length}</div><div class="stat-label">高度匹配</div></div>
@@ -561,8 +787,35 @@ function showProgress(text, pct) {
 function updateProgress(pct) { document.getElementById('progressFill').style.width = pct+'%'; }
 function hideProgress(d) { setTimeout(() => document.getElementById('progressArea').style.display='none', d||0); }
 
-function showError(msg) {
-  document.getElementById('detailContent').innerHTML = `<div class="error">${msg}<p>请检查 Steam ID 是否正确</p></div>`;
+function normalizeDisplayError(input) {
+  if (typeof input === 'string') {
+    return {
+      title: '操作失败',
+      message: input,
+      action: '请根据提示检查输入内容后重试。',
+      detail: '',
+    };
+  }
+  return {
+    title: input.title || '操作失败',
+    message: input.message || '获取数据时出错',
+    action: input.action || '请检查 Steam ID、API Key、资料隐私设置，或稍后重试。',
+    detail: input.detail || '',
+    status: input.status || '',
+  };
+}
+
+function showError(err) {
+  const e = normalizeDisplayError(err);
+  document.getElementById('detailContent').innerHTML = `
+    <div class="error">
+      <div style="font-size:20px;font-weight:950;margin-bottom:10px;">${escapeHtml(e.title)}</div>
+      <div>${escapeHtml(e.message)}</div>
+      <p style="margin-top:12px;line-height:1.6;">${escapeHtml(e.action)}</p>
+      ${e.status ? `<p style="margin-top:8px;color:var(--text-muted);font-size:12px;">HTTP ${escapeHtml(e.status)}</p>` : ''}
+      ${e.detail ? `<p style="margin-top:8px;color:var(--text-muted);font-size:12px;">${escapeHtml(e.detail)}</p>` : ''}
+    </div>
+  `;
   switchTab('tab-detail');
   document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
 }
