@@ -9,15 +9,7 @@ export async function onRequest(context) {
   }
 
   const db = env.steam_strangers;
-  await db.exec(`CREATE TABLE IF NOT EXISTS stranger_users (
-    steamid TEXT PRIMARY KEY,
-    personaname TEXT NOT NULL DEFAULT '',
-    avatar TEXT NOT NULL DEFAULT '',
-    top5_json TEXT NOT NULL DEFAULT '[]',
-    opt_in INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL DEFAULT '',
-    updated_at TEXT NOT NULL DEFAULT ''
-  )`);
+  await db.exec("CREATE TABLE IF NOT EXISTS stranger_users (steamid TEXT PRIMARY KEY, personaname TEXT NOT NULL DEFAULT '', avatar TEXT NOT NULL DEFAULT '', top5_json TEXT NOT NULL DEFAULT '[]', opt_in INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '')");
 
   let body;
   try { body = await request.json(); } catch {

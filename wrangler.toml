@@ -1,5 +1,5 @@
-name = "steam-friend-finder-proxy"
-main = "worker.js"
+name = "steam-friend-finder"
+pages_build_output_dir = "."
 compatibility_date = "2026-05-01"
 
 [[d1_databases]]
