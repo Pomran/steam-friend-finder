@@ -7,8 +7,6 @@ const state = {
 };
 
 const TOP_N = 5;
-const _k = "314BA61A8A54D175F41CA4FF0097EEB1";
-const DEFAULT_API_KEY = _k.split('').reverse().join('');
 
 const PROXY_BASE = 'https://api.steam.i-test.top';
 
@@ -47,10 +45,6 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   // event listeners
   document.getElementById('fetchBtn').addEventListener('click', startFetch);
-  document.getElementById('apiToggle').addEventListener('click', () => {
-    const s = document.getElementById('apiSection');
-    s.style.display = s.style.display === 'none' ? 'block' : 'none';
-  });
   document.getElementById('tabs').addEventListener('click', (e) => {
     const btn = e.target.closest('.tab-btn');
     if (btn) switchTab(btn.dataset.tab);
@@ -115,8 +109,8 @@ async function startFetch() {
   const steamInput = document.getElementById('steamId').value.trim();
   const fetchBtn = document.getElementById('fetchBtn');
   if (!steamInput) { showError('请填写 Steam ID'); return; }
-  const customKey = document.getElementById('apiKey').value.trim();
-  const apiKey = customKey || DEFAULT_API_KEY;
+  const apiKey = document.getElementById('apiKey').value.trim();
+  if (!apiKey) { showError('请先填写下方的 Steam API 密钥'); return; }
   fetchBtn.disabled = true;
   showProgress('正在获取游戏数据...', 10); await yieldToPaint();
 
