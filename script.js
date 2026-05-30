@@ -21,15 +21,23 @@ function steamApiUrl(endpoint, params) {
   return proxyUrl(`https://api.steampowered.com${endpoint}?${qs}`);
 }
 
+const apiCache = new Map();
+const CACHE_TTL = 10 * 60 * 1000;
+
 async function apiFetch(endpoint, params) {
-  const res = await fetch(steamApiUrl(endpoint, params));
+  const url = steamApiUrl(endpoint, params);
+  const cached = apiCache.get(url);
+  if (cached && Date.now() - cached.ts < CACHE_TTL) return cached.data;
+  const res = await fetch(url);
   if (!res.ok) {
     let detail = '';
     try { const e = await res.json(); detail = e.error || ''; } catch(e) {}
     if (res.status === 403) throw new Error('Steam API 请求失败 (403) — 内置密钥可能已失效，请联系作者更新');
     throw new Error(`Steam API 请求失败 (${res.status})${detail ? ': ' + detail : ''}`);
   }
-  return res.json();
+  const data = await res.json();
+  apiCache.set(url, { data, ts: Date.now() });
+  return data;
 }
 
 document.addEventListener('DOMContentLoaded', () => {
