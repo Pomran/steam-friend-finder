@@ -30,8 +30,10 @@ async function apiFetch(endpoint, params) {
   if (!res.ok) {
     let detail = '';
     try { const e = await res.json(); detail = e.error || ''; } catch(e) {}
-    if (res.status === 403) throw new Error('Steam API 请求失败 (403) — 内置密钥可能已失效，请联系作者更新');
-    throw new Error(`Steam API 请求失败 (${res.status})${detail ? ': ' + detail : ''}`);
+    if (res.status === 403) throw new Error('API 密钥无效或被 Steam 拒绝，请检查密钥是否正确');
+    if (res.status === 429) throw new Error('Steam API 请求过于频繁，请稍后再试');
+    if (res.status >= 500) throw new Error('Steam 服务器暂时不可用，请稍后再试');
+    throw new Error(`请求失败 (${res.status})${detail ? ': ' + detail : ''}`);
   }
   const data = await res.json();
   apiCache.set(url, { data, ts: Date.now() });
@@ -251,54 +253,6 @@ function showToast(text) {
   setTimeout(() => t.classList.remove('show'), 2500);
 }
 
-async function loadIcon(appid, iconUrl) {
-  if (!iconUrl) return null;
-  const url = `https://media.steampowered.com/steamcommunity/public/images/apps/${appid}/${iconUrl}.jpg`;
-  try {
-    const res = await fetch(proxyUrl(url));
-    if (!res.ok) return null;
-    const blob = await res.blob();
-    const blobUrl = URL.createObjectURL(blob);
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => { resolve(img); URL.revokeObjectURL(blobUrl); };
-      img.onerror = () => { resolve(null); URL.revokeObjectURL(blobUrl); };
-      img.src = blobUrl;
-    });
-  } catch {
-    return null;
-  }
-}
-
-const FONT = 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
-const RANK_COLORS = ['#fbc531', '#94a3b8', '#cd7f32'];
-const ICON_COLORS = ['#ff5e62', '#3b82f6', '#10b981', '#8c7ae6', '#fbc531'];
-
-function drawRoundRect(ctx, x, y, w, h, r, fill, stroke, lw) {
-  ctx.beginPath(); ctx.roundRect(x, y, w, h, r);
-  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
-  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw || 2; ctx.stroke(); }
-}
-
-function drawGameIcon(ctx, x, y, size, icon, letter) {
-  const cx = x + size/2, cy = y + size/2;
-  ctx.save();
-  ctx.beginPath(); ctx.roundRect(x, y, size, size, 6); ctx.clip();
-  if (icon) {
-    try { ctx.drawImage(icon, x, y, size, size); } catch(e) { icon = null; }
-  }
-  if (!icon) {
-    const ci = (letter.charCodeAt(0) || 0) % ICON_COLORS.length;
-    ctx.fillStyle = ICON_COLORS[ci]; ctx.fillRect(x, y, size, size);
-    ctx.fillStyle = '#ffffff';
-    ctx.font = `800 ${Math.round(size*0.45)}px ${FONT}`;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(letter.toUpperCase(), cx, cy+1);
-  }
-  ctx.restore();
-  ctx.strokeStyle = '#0f172a'; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.roundRect(x, y, size, size, 6); ctx.stroke();
-}
 
 const PLACEHOLDER_COLORS = ['#ff5e62','#3b82f6','#10b981','#8c7ae6','#fbc531'];
 
@@ -581,7 +535,15 @@ function updateProgress(pct) { document.getElementById('progressFill').style.wid
 function hideProgress(d) { setTimeout(() => document.getElementById('progressArea').style.display='none', d||0); }
 
 function showError(msg) {
-  document.getElementById('detailContent').innerHTML = `<div class="error">${msg}<p>请检查 Steam ID 是否正确</p></div>`;
+  let extra = '';
+  if (msg.includes('API 密钥')) extra = '<p style="margin-top:8px;font-size:13px;">请点击上方的「配置 Steam API 密钥」申请并填入正确的密钥</p>';
+  else if (msg.includes('好友码')) extra = '';
+  else if (msg.includes('Steam 标识')) extra = '';
+  else if (msg.includes('网络') || msg.includes('fetch') || msg.includes('Failed to fetch')) extra = '<p style="margin-top:8px;font-size:13px;">网络连接异常，请检查网络后重试</p>';
+  else if (msg.includes('过于频繁')) extra = '';
+  else if (msg.includes('不可用')) extra = '';
+  else extra = '<p style="margin-top:8px;font-size:13px;">请检查 Steam ID 和 API 密钥是否正确</p>';
+  document.getElementById('detailContent').innerHTML = `<div class="error">${msg}${extra}</div>`;
   switchTab('tab-detail');
   document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
 }
