@@ -461,39 +461,19 @@ function sortedGameChips(games, excluded) {
 function renderMatches() {
   const el = document.getElementById('matchesContent');
   const f = state.friendsData;
-  const optIn = localStorage.getItem('strangerOptIn') === 'true';
-  let html = '';
   if (!f.length) {
-    html = `<div class="empty"><p>暂无好友数据</p></div>`;
-  } else {
-    const best = f.reduce((a,b) => a.score > b.score ? a : b);
-    html = `
-      <div class="stats-grid">
-        <div class="stat-item"><div class="stat-value">${f.length}</div><div class="stat-label">好友分析</div></div>
-        <div class="stat-item"><div class="stat-value">${f.filter(x=>x.score>0.3).length}</div><div class="stat-label">高度匹配</div></div>
-        <div class="stat-item"><div class="stat-value" style="color:var(--brand-yellow);">${(best.score*100).toFixed(1)}%</div><div class="stat-label">最高匹配</div></div>
-      </div>
-      <div class="card"><div class="card-title">匹配排行</div><div class="friend-list">${f.map((x, i) => renderPersonCard(x, i)).join('')}</div></div>
-    `;
+    el.innerHTML = `<div class="empty"><p>暂无好友数据</p></div>`;
+    return;
   }
-  html += `
-    <div class="card" id="strangerOptInCard">
-      <div class="card-title" style="font-size:16px;">对陌生人开放匹配</div>
-      <div class="stranger-toggle-row">
-        <div class="stranger-toggle-desc">开启后，其他使用本工具的用户将能看到你的 Top5 游戏数据并计算匹配度。你的 Steam ID 和个人资料仅用于展示。</div>
-        <label class="switch">
-          <input type="checkbox" id="strangerToggle" ${optIn ? 'checked' : ''}>
-          <span class="switch-slider"></span>
-        </label>
-      </div>
+  const best = f.reduce((a,b) => a.score > b.score ? a : b);
+  el.innerHTML = `
+    <div class="stats-grid">
+      <div class="stat-item"><div class="stat-value">${f.length}</div><div class="stat-label">好友分析</div></div>
+      <div class="stat-item"><div class="stat-value">${f.filter(x=>x.score>0.3).length}</div><div class="stat-label">高度匹配</div></div>
+      <div class="stat-item"><div class="stat-value" style="color:var(--brand-yellow);">${(best.score*100).toFixed(1)}%</div><div class="stat-label">最高匹配</div></div>
     </div>
+    <div class="card"><div class="card-title">匹配排行</div><div class="friend-list">${f.map((x, i) => renderPersonCard(x, i)).join('')}</div></div>
   `;
-  el.innerHTML = html;
-  document.getElementById('strangerToggle').addEventListener('change', async (e) => {
-    const on = e.target.checked;
-    localStorage.setItem('strangerOptIn', on ? 'true' : 'false');
-    await callStrangerOptIn(on);
-  });
 }
 
 function renderPersonCard(person, rank) {
@@ -691,28 +671,49 @@ async function loadStrangers() {
 
 function renderStrangers() {
   const el = document.getElementById('strangersContent');
-  if (state.strangersError) {
-    el.innerHTML = `<div class="card"><div class="card-title">陌生人匹配</div><div class="error">陌生人匹配暂时不可用</div></div>`;
-    return;
-  }
+  const optIn = localStorage.getItem('strangerOptIn') === 'true';
   const strangers = state.strangersData;
-  if (!strangers || !strangers.length) {
-    el.innerHTML = `<div class="empty"><p>暂无其他玩家开启陌生人匹配</p></div>`;
-    return;
-  }
   const myTop5 = state.playerTopGames;
-  const scored = strangers.map(s => ({
-    ...s,
-    score: computeStrangerMatchScore(myTop5, s.top5 || []),
-  })).sort((a, b) => b.score - a.score);
+  let content = '';
+  if (state.strangersError) {
+    content = `<div class="card"><div class="card-title">陌生人匹配</div><div class="error">陌生人匹配暂时不可用</div></div>`;
+  } else if (!strangers || !strangers.length) {
+    content = `<div class="empty"><p>暂无其他玩家开启陌生人匹配</p></div>`;
+  } else {
+    const scored = strangers.map(s => ({
+      ...s,
+      score: computeStrangerMatchScore(myTop5, s.top5 || []),
+    })).sort((a, b) => b.score - a.score);
+    content = `
+      <div class="stats-grid">
+        <div class="stat-item"><div class="stat-value">${scored.length}</div><div class="stat-label">陌生玩伴</div></div>
+        <div class="stat-item"><div class="stat-value">${scored.filter(x => x.score > 0.3).length}</div><div class="stat-label">高度匹配</div></div>
+        <div class="stat-item"><div class="stat-value" style="color:var(--brand-purple);">${(scored[0].score * 100).toFixed(1)}%</div><div class="stat-label">最佳匹配</div></div>
+      </div>
+      <div class="card"><div class="card-title">陌生玩伴 <span class="stranger-badge">陌生人</span></div><div class="friend-list">${scored.map((s, i) => renderStrangerCard(s, i)).join('')}</div></div>
+    `;
+  }
   el.innerHTML = `
-    <div class="stats-grid">
-      <div class="stat-item"><div class="stat-value">${scored.length}</div><div class="stat-label">陌生玩伴</div></div>
-      <div class="stat-item"><div class="stat-value">${scored.filter(x => x.score > 0.3).length}</div><div class="stat-label">高度匹配</div></div>
-      <div class="stat-item"><div class="stat-value" style="color:var(--brand-purple);">${(scored[0].score * 100).toFixed(1)}%</div><div class="stat-label">最佳匹配</div></div>
+    <div class="card" id="strangerOptInCard">
+      <div class="card-title" style="font-size:16px;">对陌生人开放匹配</div>
+      <div class="stranger-toggle-row">
+        <div class="stranger-toggle-desc">开启后，其他使用本工具的用户将能看到你的 Top5 游戏数据并计算匹配度。你的 Steam ID 和个人资料仅用于展示。</div>
+        <label class="switch">
+          <input type="checkbox" id="strangerToggle" ${optIn ? 'checked' : ''}>
+          <span class="switch-slider"></span>
+        </label>
+      </div>
     </div>
-    <div class="card"><div class="card-title">陌生玩伴 <span class="stranger-badge">陌生人</span></div><div class="friend-list">${scored.map((s, i) => renderStrangerCard(s, i)).join('')}</div></div>
+    ${content}
   `;
+  const toggle = document.getElementById('strangerToggle');
+  if (toggle) {
+    toggle.addEventListener('change', async (e) => {
+      const on = e.target.checked;
+      localStorage.setItem('strangerOptIn', on ? 'true' : 'false');
+      await callStrangerOptIn(on);
+    });
+  }
 }
 
 function renderStrangerCard(person, rank) {
