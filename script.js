@@ -451,16 +451,22 @@ function sortedGameChips(games, excluded) {
 function renderMatches() {
   const el = document.getElementById('matchesContent');
   const f = state.friendsData;
-  if (!f.length) { el.innerHTML = `<div class="empty"><p>暂无好友数据</p></div>`; return; }
-  const best = f.reduce((a,b) => a.score > b.score ? a : b);
   const optIn = localStorage.getItem('strangerOptIn') === 'true';
-  el.innerHTML = `
-    <div class="stats-grid">
-      <div class="stat-item"><div class="stat-value">${f.length}</div><div class="stat-label">好友分析</div></div>
-      <div class="stat-item"><div class="stat-value">${f.filter(x=>x.score>0.3).length}</div><div class="stat-label">高度匹配</div></div>
-      <div class="stat-item"><div class="stat-value" style="color:var(--brand-yellow);">${(best.score*100).toFixed(1)}%</div><div class="stat-label">最高匹配</div></div>
-    </div>
-    <div class="card"><div class="card-title">匹配排行</div><div class="friend-list">${f.map((x, i) => renderPersonCard(x, i)).join('')}</div></div>
+  let html = '';
+  if (!f.length) {
+    html = `<div class="empty"><p>暂无好友数据</p></div>`;
+  } else {
+    const best = f.reduce((a,b) => a.score > b.score ? a : b);
+    html = `
+      <div class="stats-grid">
+        <div class="stat-item"><div class="stat-value">${f.length}</div><div class="stat-label">好友分析</div></div>
+        <div class="stat-item"><div class="stat-value">${f.filter(x=>x.score>0.3).length}</div><div class="stat-label">高度匹配</div></div>
+        <div class="stat-item"><div class="stat-value" style="color:var(--brand-yellow);">${(best.score*100).toFixed(1)}%</div><div class="stat-label">最高匹配</div></div>
+      </div>
+      <div class="card"><div class="card-title">匹配排行</div><div class="friend-list">${f.map((x, i) => renderPersonCard(x, i)).join('')}</div></div>
+    `;
+  }
+  html += `
     <div class="card" id="strangerOptInCard">
       <div class="card-title" style="font-size:16px;">对陌生人开放匹配</div>
       <div class="stranger-toggle-row">
@@ -472,6 +478,7 @@ function renderMatches() {
       </div>
     </div>
   `;
+  el.innerHTML = html;
   document.getElementById('strangerToggle').addEventListener('change', async (e) => {
     const on = e.target.checked;
     localStorage.setItem('strangerOptIn', on ? 'true' : 'false');
