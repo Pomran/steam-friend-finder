@@ -8,7 +8,7 @@ const state = {
 
 const TOP_N = 5;
 
-const PROXY_BASE = 'https://api.steam.i-test.top';
+const PROXY_BASE = 'https://steam.i-test.top/proxy';
 
 function proxyUrl(url) {
   return PROXY_BASE ? `${PROXY_BASE}?url=${encodeURIComponent(url)}` : url;
