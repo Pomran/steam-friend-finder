@@ -7,8 +7,6 @@ const state = {
 };
 
 const TOP_N = 5;
-const _k = "314BA61A8A54D175F41CA4FF0097EEB1";
-const DEFAULT_API_KEY = _k.split('').reverse().join('');
 
 const PROXY_BASE = 'https://api.steam.i-test.top';
 
@@ -26,16 +24,20 @@ async function apiFetch(endpoint, params) {
   if (!res.ok) {
     let detail = '';
     try { const e = await res.json(); detail = e.error || ''; } catch(e) {}
-    if (res.status === 403) throw new Error('Steam API 请求失败 (403) — 内置密钥可能已失效，请联系作者更新');
+    if (res.status === 401) throw new Error('Steam API Key 无效，请检查你填写的 key');
+    if (res.status === 403) throw new Error('Steam API 请求被拒绝，请检查 API Key 或 Steam 隐私设置');
+    if (res.status === 429) throw new Error('Steam API 请求过于频繁，请稍后重试');
     throw new Error(`Steam API 请求失败 (${res.status})${detail ? ': ' + detail : ''}`);
   }
   return res.json();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  // Clear any previously saved default
   if (typeof chrome !== 'undefined' && chrome.storage) {
-    chrome.storage.local.remove('steamId');
+    chrome.storage.local.get(['steamId', 'apiKey'], ({ steamId, apiKey }) => {
+      if (steamId) document.getElementById('steamId').value = steamId;
+      if (apiKey) document.getElementById('apiKey').value = apiKey;
+    });
   }
   // event listeners
   document.getElementById('fetchBtn').addEventListener('click', startFetch);
@@ -101,29 +103,32 @@ function yieldToPaint() { return new Promise(r => setTimeout(r, 0)); }
 
 async function startFetch() {
   const steamInput = document.getElementById('steamId').value.trim();
+  const apiKey = document.getElementById('apiKey').value.trim();
   const fetchBtn = document.getElementById('fetchBtn');
   if (!steamInput) { showError('请填写 Steam ID'); return; }
+  if (!apiKey) { showError('请填写 Steam Web API Key'); return; }
+  if (!/^[a-fA-F0-9]{32}$/.test(apiKey)) { showError('Steam Web API Key 格式不正确，请粘贴 32 位 key'); return; }
   fetchBtn.disabled = true;
   showProgress('正在获取游戏数据...', 10); await yieldToPaint();
 
   try {
-    const steamId = await resolveSteamId(steamInput, DEFAULT_API_KEY);
-    state.mySteamId = steamId; state.myApiKey = DEFAULT_API_KEY;
+    const steamId = await resolveSteamId(steamInput, apiKey);
+    state.mySteamId = steamId; state.myApiKey = apiKey;
     showProgress('正在获取游戏库...', 20); await yieldToPaint();
-    const games = await fetchOwnedGames(steamId, DEFAULT_API_KEY);
+    const games = await fetchOwnedGames(steamId, apiKey);
     state.playerGames = games;
     state.playerTopGames = getTopGames(games, TOP_N);
     showProgress(`已获取 ${games.length} 款游戏，正在分析好友...`, 40); await yieldToPaint();
-    await fetchFriendMatches(steamId, DEFAULT_API_KEY);
+    await fetchFriendMatches(steamId, apiKey);
     showProgress('正在生成报告...', 90);
     renderLibrary(); renderMatches();
     document.getElementById('tabs').style.display = 'flex';
     switchTab('tab-library');
     updateProgress(100);
     hideProgress(500);
-    // save steamId to chrome.storage
+    // Save inputs locally so users do not need to paste them every time.
     if (typeof chrome !== 'undefined' && chrome.storage) {
-      chrome.storage.local.set({ steamId: steamInput });
+      chrome.storage.local.set({ steamId: steamInput, apiKey });
     }
   } catch (err) {
     showError(err.message || '获取数据时出错');
@@ -562,7 +567,7 @@ function updateProgress(pct) { document.getElementById('progressFill').style.wid
 function hideProgress(d) { setTimeout(() => document.getElementById('progressArea').style.display='none', d||0); }
 
 function showError(msg) {
-  document.getElementById('detailContent').innerHTML = `<div class="error">${msg}<p>请检查 Steam ID 是否正确</p></div>`;
+  document.getElementById('detailContent').innerHTML = `<div class="error">${msg}<p>请根据上方提示处理后重试</p></div>`;
   switchTab('tab-detail');
   document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
 }

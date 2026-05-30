@@ -97,6 +97,7 @@ body {
 }
 
 .config-row { display: flex; gap: 24px; align-items: flex-start; }
+.config-fields { flex: 1; display: grid; gap: 18px; }
 .config-group { flex: 1; }
 
 .config-group label {
@@ -127,13 +128,12 @@ body {
   box-shadow: 6px 6px 0px var(--brand-secondary);
 }
 
-.config-group .hint {
+.config-hint {
   font-size: 13px;
   color: var(--text-dim);
-  margin-top: 16px;
   line-height: 1.6;
 }
-.config-group .hint a {
+.config-hint a {
   color: var(--brand-secondary);
   text-decoration: none;
   font-weight: 800;
@@ -542,13 +542,21 @@ body {
 
   <div class="config-panel">
     <div class="config-row">
-      <div class="config-group">
-        <label>你的 Steam ID 或主页链接</label>
-        <input type="text" id="steamId" placeholder="在这里粘贴你的主页链接...">
-        <div class="hint">
+      <div class="config-fields">
+        <div class="config-group">
+          <label>你的 Steam ID 或主页链接</label>
+          <input type="text" id="steamId" placeholder="在这里粘贴你的主页链接...">
+        </div>
+        <div class="config-group">
+          <label>Steam Web API Key</label>
+          <input type="password" id="apiKey" placeholder="粘贴你的 Steam API Key..." autocomplete="off" spellcheck="false">
+        </div>
+        <div class="config-hint">
           先去网页打开你的 <a href="https://steamcommunity.com/my/profile" target="_blank">Steam 个人主页</a>，把地址栏那一长串直接粘进来就 OK 啦！<br>
           如果正在使用 Steam 客户端，请在个人资料页面左键点击复制地址栏链接，或前往浏览器地址栏复制。<br>
-          支持格式：数字ID，或者完整主页链接直接粘贴
+          <br>
+          请前往 <a href="https://steamcommunity.com/dev/apikey" target="_blank">Steam API Key</a> 获取密钥,复制到Steam Web API Key中<br>
+          请放心，此插件目前完全运行在本地，本地输入steamkey绝对安全
         </div>
       </div>
       <div class="config-group" style="flex:0 0 auto; width: auto;">
