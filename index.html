@@ -563,7 +563,11 @@ body {
         <label>Steam API 密钥 <span style="font-weight:600;color:var(--text-muted);font-size:12px;">（可选，留空使用内置密钥）</span></label>
         <input type="text" id="apiKey" placeholder="留空则使用内置密钥">
         <div class="hint">
-          如需自定义密钥，前往 <a href="https://steamcommunity.com/dev/apikey" target="_blank">Steam API Key 注册页</a>（登录后页面会显示你的密钥），复制粘贴即可。
+          <div style="font-weight:800;margin-bottom:6px;">获取自己的 API 密钥：</div>
+          1. 打开 <a href="https://steamcommunity.com/dev/apikey" target="_blank">Steam API Key 注册页</a>，登录你的 Steam 账号<br>
+          2. 在「Domain Name」栏随便填一个网址，比如 <code style="background:#e2e8f0;padding:1px 6px;border-radius:4px;border:1.5px solid var(--border-thick);font-size:12px;font-weight:800;">localhost</code><br>
+          3. 勾选同意条款，点击「Register」<br>
+          4. 页面会显示一串密钥（格式类似 <code style="background:#e2e8f0;padding:1px 6px;border-radius:4px;border:1.5px solid var(--border-thick);font-size:12px;font-weight:800;">ABCDEF123456789...</code>），<strong>复制粘贴到上方输入框即可</strong>
         </div>
       </div>
     </div>
