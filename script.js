@@ -312,7 +312,7 @@ async function startFetch() {
     hideProgress(500);
     // auto re-opt-in if previously opted in
     if (localStorage.getItem('strangerOptIn') === 'true') {
-      await callStrangerOptIn(true);
+      await callStrangerOptIn(true, true);
     }
     // save steamId to chrome.storage
     if (typeof chrome !== 'undefined' && chrome.storage) {
@@ -800,7 +800,7 @@ function showError(msg) {
   document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
 }
 
-async function callStrangerOptIn(optIn) {
+async function callStrangerOptIn(optIn, silent) {
   const p = state.myProfile;
   if (!p || !state.mySteamId || !state.playerTopGames.length) {
     if (optIn) showToast('请先完成扫描');
@@ -826,9 +826,9 @@ async function callStrangerOptIn(optIn) {
       const e = await res.json().catch(() => ({}));
       throw new Error(e.error || `HTTP ${res.status}`);
     }
-    showToast(optIn ? '已开放陌生人匹配' : '已关闭陌生人匹配');
+    if (!silent) showToast(optIn ? '已开放陌生人匹配' : '已关闭陌生人匹配');
   } catch (err) {
-    showToast('陌生人匹配暂时不可用');
+    if (!silent) showToast('陌生人匹配暂时不可用');
     console.warn('Stranger opt-in failed:', err);
   }
 }
