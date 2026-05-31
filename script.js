@@ -1,6 +1,7 @@
 ﻿
 const state = {
   playerGames: [],
+  rawPlayerGames: [],
   playerTopGames: [],
   friendsData: [],
   mySteamId: null, myApiKey: null,
@@ -37,6 +38,138 @@ function toggleExcluded(appid) {
   if (s.has(appid)) s.delete(appid); else s.add(appid);
   saveExcludedSet(s);
   return s.has(appid);
+}
+
+function getCustomGames() {
+  try { return JSON.parse(localStorage.getItem('customGames') || '[]'); } catch { return []; }
+}
+function saveCustomGames(games) {
+  localStorage.setItem('customGames', JSON.stringify(games));
+}
+function extractAppid(input) {
+  const s = input.trim();
+  if (/^\d{1,7}$/.test(s)) return s;
+  let m = s.match(/store\.steampowered\.com\/app\/(\d+)/);
+  if (m) return m[1];
+  m = s.match(/steamcommunity\.com\/app\/(\d+)/);
+  if (m) return m[1];
+  return null;
+}
+async function lookupGameInfo(appid) {
+  const res = await fetch(proxyUrl(`https://store.steampowered.com/api/appdetails?appids=${appid}`));
+  if (!res.ok) return null;
+  const d = await res.json();
+  if (!d[appid]?.success) return null;
+  return d[appid].data;
+}
+function mergeCustomGames(games) {
+  const custom = getCustomGames();
+  const customMap = {};
+  custom.forEach(g => { customMap[g.appid] = g; });
+  const merged = games.map(g => customMap[g.appid] || g);
+  custom.forEach(g => {
+    if (!merged.some(m => m.appid === g.appid)) merged.push(g);
+  });
+  return merged;
+}
+function remergeCustomGames() {
+  state.playerGames = mergeCustomGames(state.rawPlayerGames);
+  state.playerTopGames = getTopGames(state.playerGames, TOP_N);
+  renderLibrary();
+  renderMatches();
+}
+
+function showAddGameModal(editAppid) {
+  const existing = document.getElementById('addGameOverlay');
+  if (existing) existing.remove();
+  const editMode = editAppid !== undefined;
+  const custom = getCustomGames();
+  const editGame = editMode ? custom.find(g => g.appid === editAppid) : null;
+  const overlay = document.createElement('div');
+  overlay.id = 'addGameOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:10000;display:flex;align-items:center;justify-content:center;';
+  overlay.innerHTML = `
+    <div style="background:#fff;border:3px solid var(--border-thick);border-radius:28px;padding:36px;max-width:480px;width:90%;box-shadow:var(--shadow-pop);">
+      <h3 style="font-size:20px;font-weight:900;margin-bottom:24px;color:var(--border-thick);">${editMode ? '编辑游戏' : '手动添加游戏'}</h3>
+      <div style="display:flex;flex-direction:column;gap:16px;">
+        <label style="font-size:13px;font-weight:900;color:var(--border-thick);display:flex;flex-direction:column;gap:6px;">
+          Steam 商店 URL 或 AppID
+          <input type="text" id="addGameAppid" value="${editMode ? editGame?.appid || '' : ''}" ${editMode ? 'readonly' : ''} placeholder="例: 730 或 store.steampowered.com/app/730" style="padding:14px 18px;border:3px solid var(--border-thick);border-radius:14px;font-size:15px;font-weight:700;">
+        </label>
+        <div id="addGamePreview" style="display:${editMode ? 'flex' : 'none'};align-items:center;gap:14px;padding:12px;background:var(--surface);border-radius:14px;border:2px solid var(--border-thick);">
+          <img src="${editMode ? `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${editGame?.appid}/header.jpg` : ''}" alt="" style="width:60px;height:28px;border-radius:6px;border:2px solid var(--border-thick);object-fit:cover;" onerror="this.style.display='none'">
+          <span id="addGameName" style="font-weight:800;font-size:15px;">${editMode ? editGame?.name || '' : ''}</span>
+        </div>
+        <label style="font-size:13px;font-weight:900;color:var(--border-thick);display:flex;flex-direction:column;gap:6px;">
+          游戏时长（小时）
+          <input type="number" id="addGameHours" value="${editMode ? Math.round((editGame?.playtime_forever || 0) / 60) : ''}" min="0" step="1" placeholder="输入总时长" style="padding:14px 18px;border:3px solid var(--border-thick);border-radius:14px;font-size:15px;font-weight:700;">
+        </label>
+        <div style="display:flex;gap:12px;margin-top:8px;">
+          <button id="addGameCancelBtn" class="btn btn-ghost" style="flex:1;padding:14px;">取消</button>
+          <button id="addGameSaveBtn" class="btn btn-primary" style="flex:2;padding:14px;">${editMode ? '保存' : '添加'}</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  if (!editMode) {
+    const appidInput = document.getElementById('addGameAppid');
+    let lookupTimer;
+    appidInput.addEventListener('input', () => {
+      clearTimeout(lookupTimer);
+      lookupTimer = setTimeout(async () => {
+        const appid = extractAppid(appidInput.value);
+        if (!appid) return;
+        const info = await lookupGameInfo(appid);
+        if (!info) return;
+        document.getElementById('addGamePreview').style.display = 'flex';
+        document.getElementById('addGameName').textContent = info.name;
+        const previewImg = document.querySelector('#addGamePreview img');
+        if (previewImg) {
+          previewImg.src = `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${appid}/header.jpg`;
+          previewImg.style.display = '';
+        }
+        appidInput.dataset.lookedUpAppid = appid;
+        appidInput.dataset.lookedUpName = info.name;
+      }, 500);
+    });
+  }
+
+  document.getElementById('addGameSaveBtn').addEventListener('click', async () => {
+    const appidInput = document.getElementById('addGameAppid');
+    const hoursInput = document.getElementById('addGameHours');
+    const hours = parseFloat(hoursInput.value);
+    let appid, name;
+    if (editMode) {
+      appid = editGame.appid;
+      name = editGame.name;
+    } else {
+      const extracted = extractAppid(appidInput.value);
+      if (!extracted) { showToast('请输入有效的 AppID 或商店 URL'); return; }
+      appid = +extracted;
+      if (appidInput.dataset.lookedUpAppid == appid) {
+        name = appidInput.dataset.lookedUpName;
+      } else {
+        const info = await lookupGameInfo(appid);
+        if (!info) { showToast('未找到该游戏，请检查 AppID'); return; }
+        name = info.name;
+      }
+    }
+    if (!hours || hours < 0) { showToast('请输入有效时长'); return; }
+    const arr = getCustomGames();
+    const idx = arr.findIndex(g => g.appid === appid);
+    const entry = { appid, name, playtime_forever: Math.round(hours * 60), _custom: true };
+    if (idx >= 0) arr[idx] = { ...arr[idx], ...entry };
+    else arr.push(entry);
+    saveCustomGames(arr);
+    overlay.remove();
+    remergeCustomGames();
+    showToast(editMode ? '已更新' : '已添加');
+  });
+
+  document.getElementById('addGameCancelBtn').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
 }
 
 async function apiFetch(endpoint, params) {
@@ -166,8 +299,9 @@ async function startFetch() {
     state.myProfile = (mySummary && mySummary[0]) || null;
     showProgress('正在获取游戏库...', 20); await yieldToPaint();
     const games = await fetchOwnedGames(steamId, apiKey);
-    state.playerGames = games;
-    state.playerTopGames = getTopGames(games, TOP_N);
+    state.rawPlayerGames = games;
+    state.playerGames = mergeCustomGames(games);
+    state.playerTopGames = getTopGames(state.playerGames, TOP_N);
     showProgress(`已获取 ${games.length} 款游戏，正在分析好友...`, 40); await yieldToPaint();
     await fetchFriendMatches(steamId, apiKey);
     showProgress('正在生成报告...', 90);
@@ -402,6 +536,9 @@ function renderLibrary() {
   const totalH = Math.round(all.reduce((s,g) => s+(g.playtime_forever||0), 0) / 60);
   const excluded = getExcludedSet();
 
+  const custom = getCustomGames();
+  const customBadge = (g) => g._custom ? ' <span style="font-size:10px;color:var(--brand-secondary);background:#eef6ff;padding:1px 6px;border-radius:4px;border:1.5px solid var(--border-thick);font-weight:800;">手动</span>' : '';
+
   document.getElementById('libraryContent').innerHTML = `
     <div class="stats-grid">
       <div class="stat-item"><div class="stat-value">${all.length}</div><div class="stat-label">游戏总数</div></div>
@@ -411,22 +548,46 @@ function renderLibrary() {
     <div class="card">
       <div class="card-title">
         <span>我的 Top ${TOP_N}</span>
-        <span id="toggleExcludeMode" style="margin-left:auto;font-size:12px;cursor:pointer;color:var(--text-muted);text-decoration:underline dotted;">排除游戏</span>
+        <span style="margin-left:auto;display:flex;gap:12px;align-items:center;">
+          <span class="open-add-game" style="font-size:12px;cursor:pointer;color:var(--brand-secondary);text-decoration:underline dotted;">手动添加</span>
+          <span id="toggleExcludeMode" style="font-size:12px;cursor:pointer;color:var(--text-muted);text-decoration:underline dotted;">排除游戏</span>
+        </span>
       </div>
       ${top5.length ? top5.map((g, i) => {
         const h = Math.round((g.playtime_forever||0)/60);
-        const iconUrl = g.img_icon_url ? `https://media.steampowered.com/steamcommunity/public/images/apps/${g.appid}/${g.img_icon_url}.jpg` : '';
+        const iconUrl = g._custom ? `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${g.appid}/header.jpg` : (g.img_icon_url ? `https://media.steampowered.com/steamcommunity/public/images/apps/${g.appid}/${g.img_icon_url}.jpg` : '');
         const exc = excluded.has(g.appid);
         return `<div class="game-row" style="${exc ? 'opacity:0.4;' : ''}">
           ${iconUrl ? `<div class="game-icon"><img src="${iconUrl}" class="lib-icon" alt=""></div>` : `<div class="game-icon" style="background:var(--surface);display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:12px;font-weight:800;">?</div>`}
           <span style="width:18px;font-size:12px;color:var(--text-muted);font-weight:600;text-align:center;">${i+1}</span>
-          <span class="game-name" style="${exc ? 'text-decoration:line-through;' : ''}">${g.name}</span>
+          <span class="game-name" style="${exc ? 'text-decoration:line-through;' : ''}">${g.name}${customBadge(g)}</span>
           <span style="color:var(--brand-primary);font-weight:600;font-size:13px;">${h}h</span>
           <span class="exclude-btn" data-appid="${g.appid}" style="margin-left:8px;cursor:pointer;font-size:14px;font-weight:800;color:${exc ? 'var(--text-muted)' : 'var(--text-muted)'};">${exc ? '取消排除' : '排除'}</span>
         </div>`;
       }).join('') : '<div style="color:var(--text-dim);padding:20px;text-align:center;">暂无游戏数据</div>'}
     </div>
     <div class="card"><div class="card-title">全部游戏 (${all.length})</div><div style="display:flex;flex-wrap:wrap;gap:4px;">${sortedGameChips(all, excluded).join('')}</div></div>
+    <div class="card" id="customGamesCard">
+      <div class="card-title">
+        <span>手动添加的游戏</span>
+        <button class="btn btn-ghost open-add-game" style="margin-left:auto;padding:6px 14px;font-size:12px;">+ 添加</button>
+      </div>
+      ${custom.length ? custom.map((g, i) => {
+        const h = Math.round(g.playtime_forever / 60);
+        return `<div class="game-row" style="background:#f0f7ff;">
+          <div class="game-icon"><img src="https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${g.appid}/header.jpg" alt="" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display='none'"></div>
+          <span class="game-name">${g.name}</span>
+          <input type="number" class="cg-hours" value="${h}" min="0" step="1" data-cg-appid="${g.appid}" style="width:70px;padding:6px 10px;border:2px solid var(--border-thick);border-radius:8px;font-size:14px;font-weight:700;">
+          <span style="font-size:13px;color:var(--text-dim);font-weight:600;">h</span>
+          <button class="cg-save" data-cg-appid="${g.appid}" style="padding:6px 12px;background:var(--brand-success);color:#fff;border:2px solid var(--border-thick);border-radius:8px;font-size:12px;font-weight:800;cursor:pointer;">保存</button>
+          <button class="cg-delete" data-cg-appid="${g.appid}" style="padding:6px 12px;background:#fee2e2;color:var(--danger);border:2px solid var(--border-thick);border-radius:8px;font-size:12px;font-weight:800;cursor:pointer;">删除</button>
+        </div>`;
+      }).join('') : '<div style="color:var(--text-dim);text-align:center;padding:12px;font-size:13px;font-weight:600;">还没有手动添加的游戏</div>'}
+      <div style="margin-top:14px;padding-top:14px;border-top:2px dashed #cbd5e1;font-size:12px;color:var(--text-muted);font-weight:600;line-height:1.6;">
+        手动添加其他 Steam 账号的游戏数据到当前分析中。输入商店 URL 或 AppID，填写时长即可。<br>
+        如果某款游戏已在当前账号中，手动数据会<strong>覆盖</strong>原有数据；如果不存在则追加。
+      </div>
+    </div>
   `;
   document.querySelectorAll('img.lib-icon').forEach(img => {
     img.addEventListener('error', () => { img.style.display = 'none'; });
@@ -447,6 +608,29 @@ function renderLibrary() {
       renderLibrary();
       renderMatches();
       switchTab('tab-library');
+    });
+  });
+  document.querySelectorAll('.open-add-game').forEach(el => {
+    el.addEventListener('click', () => showAddGameModal());
+  });
+  document.querySelectorAll('.cg-save').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const appid = +btn.dataset.cgAppid;
+      const input = document.querySelector(`.cg-hours[data-cg-appid="${appid}"]`);
+      const hours = parseFloat(input?.value);
+      if (!hours || hours < 0) { showToast('请输入有效时长'); return; }
+      const arr = getCustomGames();
+      const g = arr.find(c => c.appid === appid);
+      if (g) { g.playtime_forever = Math.round(hours * 60); saveCustomGames(arr); remergeCustomGames(); showToast('已更新'); }
+    });
+  });
+  document.querySelectorAll('.cg-delete').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const appid = +btn.dataset.cgAppid;
+      if (!confirm('确定删除？')) return;
+      saveCustomGames(getCustomGames().filter(c => c.appid !== appid));
+      remergeCustomGames();
+      showToast('已删除');
     });
   });
 }
