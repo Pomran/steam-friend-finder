@@ -819,7 +819,11 @@ function showPersonDetail(steamid) {
 function switchTab(tabId) {
   document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
   document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
-  document.getElementById(tabId)?.classList.add('active');
+  const target = document.getElementById(tabId);
+  if (target) {
+    target.classList.add('active');
+    target.classList.add('visited');
+  }
   const btn = document.querySelector(`[data-tab="${tabId}"]`);
   if (btn) btn.classList.add('active');
 }
