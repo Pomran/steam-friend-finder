@@ -2,6 +2,7 @@ export async function onRequest(context) {
   const { request, env } = context;
   try {
     const db = env.steam_strangers;
+    await db.exec("DROP TABLE IF EXISTS recruiting_posts");
     await db.exec(`CREATE TABLE IF NOT EXISTS recruiting_posts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       creator_steamid TEXT NOT NULL DEFAULT '',
@@ -23,6 +24,6 @@ export async function onRequest(context) {
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
     });
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message, stack: err.stack }), { status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+    return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
   }
 }
