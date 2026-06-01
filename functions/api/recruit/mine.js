@@ -20,7 +20,10 @@ export async function onRequest(context) {
     created_at TEXT NOT NULL DEFAULT '',
     updated_at TEXT NOT NULL DEFAULT ''
   )`);
-  await db.exec(`ALTER TABLE recruiting_posts ADD COLUMN IF NOT EXISTS team_type TEXT NOT NULL DEFAULT ''`);
+  const { results: cols } = await db.prepare("PRAGMA table_info('recruiting_posts')").all();
+  if (!cols.some(c => c.name === 'team_type')) {
+    await db.exec("ALTER TABLE recruiting_posts ADD COLUMN team_type TEXT NOT NULL DEFAULT ''");
+  }
   const url = new URL(request.url);
   const steamid = url.searchParams.get('steamid');
   if (!steamid) {
