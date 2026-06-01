@@ -12,6 +12,7 @@ const state = {
   strangersData: null,
   strangersError: null,
   _recruitMode: 'match',
+  recentMatchResults: null,
 };
 
 const STRANGER_API_BASE = '';
@@ -227,8 +228,25 @@ document.addEventListener('DOMContentLoaded', () => {
     const card = e.target.closest('.friend-card');
     if (card && card.dataset.steamid) showStrangerDetail(card.dataset.steamid);
   });
+  document.getElementById('recruitContent').addEventListener('click', (e) => {
+    const card = e.target.closest('.friend-card');
+    if (card && card.dataset.steamid) {
+      const sid = card.dataset.steamid;
+      if (state._recruitMode === 'recent') {
+        showRecentDetail(sid);
+      } else {
+        if (state.friendsData.some(f => f.steamid === sid)) {
+          showPersonDetail(sid);
+        } else {
+          showStrangerDetail(sid);
+        }
+      }
+      state._detailSource = 'recruit';
+    }
+  });
   document.getElementById('detailContent').addEventListener('click', (e) => {
     if (e.target.id === 'backBtn') {
+      if (state._detailSource === 'recruit') { switchTab('tab-recruit'); return; }
       switchTab(state._detailSource === 'strangers' ? 'tab-strangers' : 'tab-matches');
     }
     if (e.target.id === 'shareDetailBtn') shareDetailResults();
@@ -1181,7 +1199,7 @@ function runRecruitMatch() {
       <div class="stat-item"><div class="stat-value" style="color:var(--brand-secondary);">${results[0].hours.toFixed(1)}h</div><div class="stat-label">最接近: ${results[0].name}</div></div>
     </div>
     <div class="card"><div class="card-title">指定匹配结果</div><div class="friend-list">${results.map((r, i) => `
-      <div class="friend-card" style="animation-delay:${i * 0.04}s;">
+      <div class="friend-card" data-steamid="${r.steamid}" data-source="${r.source}" style="animation-delay:${i * 0.04}s;">
         <div class="friend-avatar">${r.avatar ? `<img src="${r.avatar}" alt="">` : `<div class="placeholder">${r.name[0]}</div>`}</div>
         <div class="friend-info">
           <div class="friend-name">${r.name} <span class="stranger-badge" style="background:${sLabel(r.source)};">${r.source}</span></div>
@@ -1280,6 +1298,7 @@ async function runRecentMatch(myRecent) {
   }
 
   allResults.sort((a, b) => (b.score || 0) - (a.score || 0));
+  state.recentMatchResults = allResults;
 
   if (!allResults.length) {
     container.innerHTML = `<div class="empty"><p>未找到匹配结果</p></div>`;
@@ -1300,7 +1319,7 @@ async function runRecentMatch(myRecent) {
         const owns = (r.games || []).some(g => g.appid === pg.appid);
         return `<span class="top5-dot ${owns ? 'owned' : 'missing'}" title="${pg.name}">${owns ? '✓' : '–'}</span>`;
       }).join('');
-      return `<div class="friend-card" style="animation-delay:${i * 0.04}s;">
+      return `<div class="friend-card" data-steamid="${r.steamid}" data-source="${r.source}" style="animation-delay:${i * 0.04}s;">
         <div class="friend-avatar">${r.avatar ? `<img src="${r.avatar}" alt="">` : `<div class="placeholder">${r.name[0]}</div>`}</div>
         <div class="friend-info">
           <div class="friend-name">${r.name} <span class="stranger-badge" style="background:${sColor(r.source)};">${r.source}</span></div>
@@ -1313,5 +1332,69 @@ async function runRecentMatch(myRecent) {
         </div>
       </div>`;
     }).join('')}</div></div>
+  `;
+}
+
+function showRecentDetail(steamid) {
+  const p = state.recentMatchResults && state.recentMatchResults.find(r => r.steamid === steamid);
+  if (!p) return;
+  state._detailSteamId = steamid;
+  state._detailSource = 'recruit';
+  switchTab('tab-detail');
+  const name = p.name || steamid;
+  const avatar = p.avatar || '';
+  const myRecent = state.myRecentGames
+    .filter(g => (g.playtime_2weeks || 0) > 0)
+    .sort((a, b) => (b.playtime_2weeks || 0) - (a.playtime_2weeks || 0))
+    .slice(0, TOP_N);
+  const theirGames = p.games || [];
+  const theirMap = {};
+  theirGames.forEach(g => { theirMap[g.appid] = g; });
+  const matchCount = myRecent.filter(g => theirMap[g.appid]).length;
+  const pct = ((p.score || 0) * 100).toFixed(1);
+  const dc = document.getElementById('detailContent');
+  dc.innerHTML = `
+    <div class="detail-header">
+      <div class="detail-avatar">${avatar ? `<img src="${avatar}" alt="">` : `<div class="placeholder">${name[0]}</div>`}</div>
+      <div class="detail-info">
+        <h2>${name}</h2>
+        <div class="match-badge">${pct}% 近期匹配 · 重合 ${matchCount}/${TOP_N}</div>
+      </div>
+      <button class="btn btn-ghost" id="backBtn">← 返回</button>
+    </div>
+    <div class="detail-body">
+      <div class="card">
+        <div class="card-title">近两周 Top5 时长对比</div>
+        ${myRecent.map((g) => {
+          const pT = g.playtime_2weeks || 0;
+          const fT = (theirMap[g.appid]?.playtime_2weeks) || 0;
+          const has = theirMap[g.appid];
+          return `<div class="game-row">
+            <span style="width:24px;height:24px;border-radius:6px;overflow:hidden;flex-shrink:0;background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:${has ? 'var(--brand-success)' : 'var(--text-muted)'}">${has ? '✓' : '✕'}</span>
+            <span class="game-name">${g.name}</span>
+            <div class="game-hours-compare">
+              <span><span class="hour-dot me"></span>${Math.round(pT/60)}h</span>
+              <span><span class="hour-dot them"></span>${Math.round(fT/60)}h</span>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+      <div class="card">
+        <div class="card-title">对方近期 Top${TOP_N}</div>
+        ${theirGames.length ? theirGames.map((g, i) => {
+          const h = Math.round((g.playtime_2weeks || 0) / 60);
+          const iconUrl = g.img_icon_url ? `https://media.steampowered.com/steamcommunity/public/images/apps/${g.appid}/${g.img_icon_url}.jpg` : '';
+          return `<div class="game-row">
+            ${iconUrl ? `<div class="game-icon"><img src="${iconUrl}" alt="" style="width:100%;height:100%;object-fit:cover;"></div>` : `<div class="game-icon" style="background:var(--surface);display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:10px;font-weight:800;">${i + 1}</div>`}
+            <span class="game-name">${g.name}</span>
+            <span style="color:var(--brand-yellow);font-weight:600;font-size:13px;">${h}h</span>
+          </div>`;
+        }).join('') : '<div style="color:var(--text-dim);padding:12px;text-align:center;">无近期游戏数据</div>'}
+      </div>
+    </div>
+    <div class="card" style="text-align:center;">
+      <p style="font-size:14px;color:var(--text-dim);margin-bottom:16px;font-weight:600;">点击下方按钮前往 Steam 添加好友</p>
+      <a href="https://steamcommunity.com/profiles/${steamid}" target="_blank" class="btn btn-primary" style="text-decoration:none;display:inline-flex;">前往 Steam 添加好友</a>
+    </div>
   `;
 }
