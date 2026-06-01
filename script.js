@@ -1157,19 +1157,53 @@ function renderMyRecruits() {
     el.innerHTML = `<div class="card"><div class="card-title">我的招募</div><div class="empty"><p>你还没有参与任何招募</p></div></div>`;
     return;
   }
-  const created = posts.filter(p => p.creator_steamid === state.mySteamId);
-  const joined = posts.filter(p => p.creator_steamid !== state.mySteamId && (p.member_list || []).some(m => m.steamid === state.mySteamId));
-  let html = `<div class="card"><div class="card-title">我的招募</div>`;
+  const dismissed = getDismissedRecruits();
+  const filtered = posts.filter(p => !dismissed.has(p.id));
+  const closedCount = posts.filter(p => p.status === 0).length;
+  if (!filtered.length) {
+    el.innerHTML = `<div class="card"><div class="card-title">我的招募 <button class="btn btn-ghost" onclick="clearDismissedRecruits()" style="font-size:12px;padding:2px 8px;">恢复清除</button></div><div class="empty"><p>已清除所有招募历史</p></div></div>`;
+    return;
+  }
+  const created = filtered.filter(p => p.creator_steamid === state.mySteamId);
+  const joined = filtered.filter(p => p.creator_steamid !== state.mySteamId && (p.member_list || []).some(m => m.steamid === state.mySteamId));
+  let html = `<div class="card"><div class="card-title">我的招募 <span style="font-size:12px;font-weight:400;color:var(--text-dim);">已清除可恢复</span></div>`;
+  if (closedCount > 0) {
+    html += `<button class="btn btn-ghost" onclick="dismissClosedRecruits()" style="font-size:12px;padding:4px 10px;margin:0 0 10px 16px;">清除已关闭 (${closedCount})</button>`;
+  }
   if (created.length) {
     html += `<div style="font-size:12px;color:var(--text-dim);font-weight:600;margin:0 0 8px 16px;">创建的（${created.length}）</div>
-      <div class="recruit-list">${created.map(renderRecruitCard).join('')}</div>`;
+      <div class="recruit-list">${created.map(p => renderRecruitCard(p) + `<div style="text-align:right;margin-top:-6px;margin-bottom:10px;"><button class="btn btn-ghost" onclick="dismissRecruit(${p.id})" style="font-size:11px;padding:2px 8px;color:var(--text-muted);">清除</button></div>`).join('')}</div>`;
   }
   if (joined.length) {
     html += `<div style="font-size:12px;color:var(--text-dim);font-weight:600;margin:${created.length?'16px 0 8px 16px':'0 0 8px 16px'};">加入的（${joined.length}）</div>
-      <div class="recruit-list">${joined.map(renderRecruitCard).join('')}</div>`;
+      <div class="recruit-list">${joined.map(p => renderRecruitCard(p) + `<div style="text-align:right;margin-top:-6px;margin-bottom:10px;"><button class="btn btn-ghost" onclick="dismissRecruit(${p.id})" style="font-size:11px;padding:2px 8px;color:var(--text-muted);">清除</button></div>`).join('')}</div>`;
   }
   html += `</div>`;
   el.innerHTML = html;
+}
+
+function getDismissedRecruits() {
+  try { return new Set(JSON.parse(localStorage.getItem('recruitDismissed') || '[]')); } catch { return new Set(); }
+}
+function saveDismissedRecruits(set) {
+  localStorage.setItem('recruitDismissed', JSON.stringify([...set]));
+}
+function dismissRecruit(id) {
+  const s = getDismissedRecruits();
+  s.add(id);
+  saveDismissedRecruits(s);
+  renderMyRecruits();
+}
+function dismissClosedRecruits() {
+  const posts = myRecruits || [];
+  const s = getDismissedRecruits();
+  posts.filter(p => p.status === 0).forEach(p => s.add(p.id));
+  saveDismissedRecruits(s);
+  renderMyRecruits();
+}
+function clearDismissedRecruits() {
+  localStorage.removeItem('recruitDismissed');
+  renderMyRecruits();
 }
 
 function loadMoreStrangers() {
