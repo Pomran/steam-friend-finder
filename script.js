@@ -1010,7 +1010,7 @@ async function createRecruitPost() {
         game_name: game.name,
         game_img_icon_url: game.img_icon_url || '',
         max_members: maxMembers,
-        team_type: teamType,
+        description: teamType === 'new' ? '__new_team__' : '',
       }),
     });
     if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error || `HTTP ${res.status}`); }
@@ -1066,7 +1066,7 @@ function renderRecruitCard(post) {
       <div class="recruit-game-icon">${iconUrl ? `<img src="${iconUrl}" alt="">` : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:var(--surface);font-weight:700;font-size:10px;">G</div>`}</div>
       <div class="recruit-game-info">
         <div class="recruit-game-name">${post.game_name}</div>
-        <div class="recruit-meta">${memberCount}/${post.max_members} 人${post.team_type === 'new' ? ' · <span class="stranger-badge" style="font-size:11px;padding:1px 6px;">新坑</span>' : ''}</div>
+        <div class="recruit-meta">${memberCount}/${post.max_members} 人${post.description === '__new_team__' ? ' · <span class="stranger-badge" style="font-size:11px;padding:1px 6px;">新坑</span>' : ''}</div>
       </div>
     </div>
     <div class="recruit-creator">
