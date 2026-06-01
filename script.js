@@ -356,11 +356,24 @@ async function fetchOwnedGames(steamId, apiKey) {
 }
 
 async function fetchFriendMatches(steamId, apiKey) {
-  const d = await apiFetch('/ISteamUser/GetFriendList/v1/', { key: apiKey, steamid: steamId, relationship: 'friend', format: 'json' });
+  let d;
+  try {
+    d = await apiFetch('/ISteamUser/GetFriendList/v1/', { key: apiKey, steamid: steamId, relationship: 'friend', format: 'json' });
+  } catch (e) {
+    if (e.message.includes('不可用')) throw new Error('无法获取好友列表，请确保你的 Steam 个人资料的「好友列表」隐私设置为公开。可在 Steam 编辑个人资料 → 隐私设置中修改');
+    throw e;
+  }
   const friends = (d.friendslist && d.friendslist.friends) || [];
-  if (friends.length === 0) { state.friendsData = []; return; }
+  if (friends.length === 0) {
+    showToast('好友列表为空，请确认你的 Steam 好友列表已公开');
+    state.friendsData = [];
+    return;
+  }
 
   const friendIds = friends.map(f => f.steamid);
+  if (friendIds.length > 100) {
+    showToast(`好友数 ${friendIds.length} 个，预计分析 ${Math.ceil(friendIds.length / 2)} 秒，请耐心等待`);
+  }
   const summaries = await fetchPlayerSummaries(friendIds, apiKey);
   const summaryMap = {}; (summaries || []).forEach(s => { summaryMap[s.steamid] = s; });
 
@@ -824,6 +837,7 @@ function showError(msg) {
   else if (msg.includes('Steam 标识')) extra = '';
   else if (msg.includes('网络') || msg.includes('fetch') || msg.includes('Failed to fetch')) extra = '<p style="margin-top:8px;font-size:13px;">网络连接异常，请检查网络后重试</p>';
   else if (msg.includes('过于频繁')) extra = '';
+  else if (msg.includes('好友列表')) extra = '';
   else if (msg.includes('不可用')) extra = '';
   else extra = '<p style="margin-top:8px;font-size:13px;">请检查 Steam ID 和 API 密钥是否正确</p>';
   document.getElementById('detailContent').innerHTML = `<div class="error">${msg}${extra}</div>`;
