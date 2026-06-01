@@ -993,9 +993,21 @@ function renderRecruitTeam(container) {
         <label>
           选择游戏
           <select id="recruitTeamGameSelect">
+            <option value="">-- 选择游戏 --</option>
             ${games.map(g => `<option value="${g.appid}">${g.name}</option>`).join('')}
+            <option value="__custom__">手动输入游戏...</option>
           </select>
         </label>
+        <div id="recruitTeamCustomGame" style="display:none;">
+          <label style="margin-top:8px;">
+            游戏 AppID
+            <input type="number" id="recruitTeamCustomAppid" placeholder="如 578080">
+          </label>
+          <label>
+            游戏名称
+            <input type="text" id="recruitTeamCustomName" placeholder="如 PUBG: BATTLEGROUNDS">
+          </label>
+        </div>
         <label>
           目标
           <div style="display:flex;gap:6px;flex-wrap:wrap;">
@@ -1026,6 +1038,10 @@ function renderRecruitTeam(container) {
     <div id="recruitTeamOpenList"></div>
     <div id="recruitTeamMyList"></div>
   `;
+  const sel = document.getElementById('recruitTeamGameSelect');
+  sel.addEventListener('change', () => {
+    document.getElementById('recruitTeamCustomGame').style.display = sel.value === '__custom__' ? 'block' : 'none';
+  });
   loadRecruitPosts(true);
   loadMyRecruits();
 }
@@ -1036,9 +1052,19 @@ async function createRecruitPost() {
   if (btn.disabled) return;
   btn.disabled = true; btn.textContent = '发布中...';
   const gameSelect = document.getElementById('recruitTeamGameSelect');
-  const appid = parseInt(gameSelect.value);
-  const game = state.playerGames.find(g => g.appid === appid);
-  if (!game) { showToast('请选择游戏'); btn.disabled = false; btn.textContent = '发布招募'; return; }
+  const rawVal = gameSelect.value;
+  let appid, gameName, gameIcon = '';
+  if (rawVal === '__custom__') {
+    appid = parseInt(document.getElementById('recruitTeamCustomAppid').value.trim());
+    gameName = document.getElementById('recruitTeamCustomName').value.trim();
+    if (!appid || !gameName) { showToast('请填写游戏的 AppID 和名称'); btn.disabled = false; btn.textContent = '发布招募'; return; }
+  } else {
+    appid = parseInt(rawVal);
+    const game = state.playerGames.find(g => g.appid === appid);
+    if (!game) { showToast('请选择游戏'); btn.disabled = false; btn.textContent = '发布招募'; return; }
+    gameName = game.name;
+    gameIcon = game.img_icon_url || '';
+  }
   const maxMembers = parseInt(document.getElementById('recruitTeamMaxMembers').value) || 4;
   const teamType = document.getElementById('recruitTeamNewTag').checked ? 'new' : '';
   const goalEl = document.querySelector('input[name="recruitGoal"]:checked');
@@ -1054,8 +1080,8 @@ async function createRecruitPost() {
         creator_name: state.myProfile.personaname || '',
         creator_avatar: state.myProfile.avatarfull || state.myProfile.avatarmedium || '',
         game_appid: appid,
-        game_name: game.name,
-        game_img_icon_url: game.img_icon_url || '',
+        game_name: gameName,
+        game_img_icon_url: gameIcon,
         max_members: maxMembers,
         description: description,
         goal_type: goalType,
@@ -1068,7 +1094,7 @@ async function createRecruitPost() {
     document.querySelectorAll('input[name="recruitGoal"]').forEach(i => i.checked = false);
     document.querySelectorAll('input[name="recruitTime"]').forEach(i => i.checked = false);
     recruitPage = 1; recruitGameFilter = '';
-    loadRecruitPosts();
+    loadRecruitPosts(true);
     loadMyRecruits();
   } catch (err) {
     showToast('发布失败: ' + err.message);
@@ -1147,6 +1173,7 @@ function renderRecruitCard(post, showKick) {
   if (meta.isNew || post.description === '__new_team__') badges.push('新坑');
   if (meta.goal) badges.push(meta.goal);
   if (meta.time) badges.push(meta.time);
+  const badgeClass = b => { const m={'新坑':'badge-purple','娱乐':'badge-green','冲分':'badge-red','日常':'badge-blue','早上':'badge-amber','下午':'badge-orange','晚上':'badge-indigo','深夜':'badge-violet'}; return m[b]||'badge-gray'; };
   const memberAvatars = members.map((m, idx) => {
     const kickBtn = showKick && isCreator && m.steamid !== state.mySteamId ? `<button class="recruit-kick-btn" onclick="event.stopPropagation();kickMember(${post.id},'${m.steamid}')">×</button>` : '';
     const avatar = m.avatar ? `<img src="${m.avatar}" alt="">` : `<div class="placeholder">${(m.personaname||'?')[0]}</div>`;
@@ -1157,7 +1184,7 @@ function renderRecruitCard(post, showKick) {
       <div class="recruit-game-icon">${iconUrl ? `<img src="${iconUrl}" alt="">` : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:var(--surface);font-weight:700;font-size:10px;">G</div>`}</div>
       <div class="recruit-game-info">
         <div class="recruit-game-name">${post.game_name}</div>
-        <div class="recruit-meta">${badges.length ? badges.map(b => `<span class="stranger-badge" style="font-size:11px;padding:1px 6px;">${b}</span>`).join(' ') : ''} ${memberCount}/${post.max_members} 人 · ${timeAgo(post.created_at)}</div>
+        <div class="recruit-meta">${badges.length ? badges.map(b => `<span class="recruit-badge ${badgeClass(b)}">${b}</span>`).join(' ') : ''} ${memberCount}/${post.max_members} 人 · ${timeAgo(post.created_at)}</div>
       </div>
     </div>
     <div class="recruit-members">${memberAvatars}</div>
@@ -1184,7 +1211,7 @@ async function joinRecruitPost(postId) {
     });
     if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error || `HTTP ${res.status}`); }
     showToast('已加入该招募');
-    loadRecruitPosts();
+    loadRecruitPosts(true);
     loadMyRecruits();
   } catch (err) {
     showToast(err.message);
@@ -1200,7 +1227,7 @@ async function leaveRecruitPost(postId) {
     });
     if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error || `HTTP ${res.status}`); }
     showToast('已退出该招募');
-    loadRecruitPosts();
+    loadRecruitPosts(true);
     loadMyRecruits();
   } catch (err) {
     showToast(err.message);
@@ -1216,7 +1243,7 @@ async function closeRecruitPost(postId) {
     });
     if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error || `HTTP ${res.status}`); }
     showToast('招募已关闭');
-    loadRecruitPosts();
+    loadRecruitPosts(true);
     loadMyRecruits();
   } catch (err) {
     showToast(err.message);
@@ -1268,12 +1295,12 @@ function renderMyRecruits() {
   const filtered = posts.filter(p => !dismissed.has(p.id));
   const closedCount = posts.filter(p => p.status === 0).length;
   if (!filtered.length) {
-    el.innerHTML = `<div class="card"><div class="card-title">我的招募 <button class="btn btn-ghost" onclick="clearDismissedRecruits()" style="font-size:12px;padding:2px 8px;">恢复清除</button></div><div class="empty"><p>已清除所有招募历史</p></div></div>`;
+    el.innerHTML = `<div class="card"><div class="card-title">我的招募</div><div class="empty"><p>已清除，刷新页面可恢复</p></div></div>`;
     return;
   }
   const created = filtered.filter(p => p.creator_steamid === state.mySteamId);
   const joined = filtered.filter(p => p.creator_steamid !== state.mySteamId && (p.member_list || []).some(m => m.steamid === state.mySteamId));
-  let html = `<div class="card"><div class="card-title">我的招募 <span style="font-size:12px;font-weight:400;color:var(--text-dim);">已清除可恢复</span></div>`;
+  let html = `<div class="card"><div class="card-title">我的招募</div>`;
   if (closedCount > 0) {
     html += `<button class="btn btn-ghost" onclick="dismissClosedRecruits()" style="font-size:12px;padding:4px 10px;margin:0 0 10px 16px;">清除已关闭 (${closedCount})</button>`;
   }
@@ -1289,27 +1316,19 @@ function renderMyRecruits() {
   el.innerHTML = html;
 }
 
+let recruitDismissed = null;
 function getDismissedRecruits() {
-  try { return new Set(JSON.parse(localStorage.getItem('recruitDismissed') || '[]')); } catch { return new Set(); }
-}
-function saveDismissedRecruits(set) {
-  localStorage.setItem('recruitDismissed', JSON.stringify([...set]));
+  if (!recruitDismissed) recruitDismissed = new Set();
+  return recruitDismissed;
 }
 function dismissRecruit(id) {
-  const s = getDismissedRecruits();
-  s.add(id);
-  saveDismissedRecruits(s);
+  getDismissedRecruits().add(id);
   renderMyRecruits();
 }
 function dismissClosedRecruits() {
   const posts = myRecruits || [];
   const s = getDismissedRecruits();
   posts.filter(p => p.status === 0).forEach(p => s.add(p.id));
-  saveDismissedRecruits(s);
-  renderMyRecruits();
-}
-function clearDismissedRecruits() {
-  localStorage.removeItem('recruitDismissed');
   renderMyRecruits();
 }
 
@@ -1491,6 +1510,16 @@ function renderRecruit() {
       .recruit-member-avatar img,.recruit-member-avatar .placeholder{width:100%;height:100%;object-fit:cover;display:flex;align-items:center;justify-content:center;background:var(--surface);font-size:10px;font-weight:700;color:var(--text-muted);}
       .recruit-kick-btn{position:absolute;top:-5px;right:-5px;width:16px;height:16px;border-radius:50%;border:2px solid var(--border-thick);background:#fff;color:#e53e3e;font-size:11px;font-weight:700;line-height:1;cursor:pointer;display:none;align-items:center;justify-content:center;padding:0;}
       .recruit-member-avatar.is-kickable:hover .recruit-kick-btn{display:flex;}
+      .recruit-badge{display:inline-block;font-size:11px;padding:1px 6px;border-radius:6px;font-weight:700;border:2px solid var(--border-thick);vertical-align:middle;margin-right:2px;}
+      .badge-purple{background:#e9d8fd;color:#6b46c1;}
+      .badge-green{background:#c6f6d5;color:#276749;}
+      .badge-red{background:#fed7d7;color:#9b2c2c;}
+      .badge-blue{background:#bee3f8;color:#2a4365;}
+      .badge-amber{background:#fefcbf;color:#744210;}
+      .badge-orange{background:#feebc8;color:#7b341e;}
+      .badge-indigo{background:#c3dafe;color:#3730a3;}
+      .badge-violet{background:#e9d8fd;color:#553c9a;}
+      .badge-gray{background:#e2e8f0;color:#4a5568;}
     `;
     document.head.appendChild(s);
   }
