@@ -946,7 +946,7 @@ async function loadStrangers(force) {
     el.innerHTML = `<div class="empty"><p>请先完成扫描</p></div>`;
     return;
   }
-  renderStrangersToggle();
+  if (!document.getElementById('strangerOptInCard')) renderStrangersToggle();
   if (!force && strangersCache.data && Date.now() - strangersCache.ts < STRANGERS_CACHE_TTL) {
     state.strangersData = strangersCache.data;
     state.strangersError = null;
