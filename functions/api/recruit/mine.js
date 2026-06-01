@@ -1,4 +1,5 @@
 export async function onRequest(context) {
+  try {
   const { request, env } = context;
   if (request.method === 'OPTIONS') {
     return new Response(null, { headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' } });
@@ -39,6 +40,9 @@ export async function onRequest(context) {
     });
   } catch (err) {
     return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+  }
+  } catch (err) {
+    return new Response(JSON.stringify({ outer: err.message }), { status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
   }
 }
 function safeJsonParse(s) {
