@@ -1051,7 +1051,7 @@ function renderRecruitPosts() {
   if (!el) return;
   const posts = recruitPosts || [];
   if (!posts.length) {
-    el.innerHTML = `<div class="empty"><p>暂无公开招募</p></div>`;
+    el.innerHTML = `<div class="card"><div class="card-title">公开招募</div><div class="empty"><p>暂无公开招募</p></div></div>`;
     return;
   }
   el.innerHTML = `
@@ -1161,7 +1161,7 @@ function renderMyRecruits() {
   if (!el) return;
   const posts = myRecruits || [];
   if (!posts.length) {
-    el.innerHTML = `<div class="empty"><p>你还没有参与任何招募</p></div>`;
+    el.innerHTML = `<div class="card"><div class="card-title">我的招募</div><div class="empty"><p>你还没有参与任何招募</p></div></div>`;
     return;
   }
   const created = posts.filter(p => p.creator_steamid === state.mySteamId);
