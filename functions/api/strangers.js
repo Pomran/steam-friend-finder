@@ -12,11 +12,11 @@ export async function onRequest(context) {
   }
 
   const db = env.steam_strangers;
-  await db.exec("CREATE TABLE IF NOT EXISTS stranger_users (steamid TEXT PRIMARY KEY, personaname TEXT NOT NULL DEFAULT '', avatar TEXT NOT NULL DEFAULT '', top5_json TEXT NOT NULL DEFAULT '[]', opt_in INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '')");
+  await db.exec("CREATE TABLE IF NOT EXISTS stranger_users (steamid TEXT PRIMARY KEY, personaname TEXT NOT NULL DEFAULT '', avatar TEXT NOT NULL DEFAULT '', top5_json TEXT NOT NULL DEFAULT '[]', recent_top5_json TEXT NOT NULL DEFAULT '[]', opt_in INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '')");
 
   try {
     const { results } = await db.prepare(
-      `SELECT steamid, personaname, avatar, top5_json FROM stranger_users
+      `SELECT steamid, personaname, avatar, top5_json, recent_top5_json FROM stranger_users
        WHERE opt_in = 1 AND steamid != ?
        ORDER BY updated_at DESC`
     ).bind(steamid).all();
@@ -26,6 +26,7 @@ export async function onRequest(context) {
       personaname: r.personaname,
       avatar: r.avatar,
       top5: safeJsonParse(r.top5_json),
+      recentTop5: safeJsonParse(r.recent_top5_json),
     }));
 
     return new Response(JSON.stringify(parsed), {

@@ -3,11 +3,15 @@ const state = {
   playerGames: [],
   rawPlayerGames: [],
   playerTopGames: [],
+  myRecentGames: [],
+  friendsRecentData: [],
+  friendsRecentLoaded: false,
   friendsData: [],
   mySteamId: null, myApiKey: null,
   myProfile: null,
   strangersData: null,
   strangersError: null,
+  _recruitMode: 'match',
 };
 
 const STRANGER_API_BASE = '';
@@ -212,7 +216,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btn) {
       switchTab(btn.dataset.tab);
       if (btn.dataset.tab === 'tab-strangers') loadStrangers();
-      if (btn.dataset.tab === 'tab-custom') renderCustomMatch();
+      if (btn.dataset.tab === 'tab-recruit') renderRecruit();
     }
   });
   document.getElementById('matchesContent').addEventListener('click', (e) => {
@@ -302,6 +306,8 @@ async function startFetch() {
     state.rawPlayerGames = games;
     state.playerGames = mergeCustomGames(games);
     state.playerTopGames = getTopGames(state.playerGames, TOP_N);
+    showProgress('正在获取近期游戏数据...', 30); await yieldToPaint();
+    try { state.myRecentGames = await fetchRecentGames(steamId, apiKey); } catch (e) { state.myRecentGames = []; }
     showProgress(`已获取 ${games.length} 款游戏，正在分析好友...`, 40); await yieldToPaint();
     await fetchFriendMatches(steamId, apiKey);
     showProgress('正在生成报告...', 90);
@@ -377,6 +383,13 @@ function getTopGames(games, n = TOP_N) {
   return [...games].filter(g => (g.playtime_forever || 0) > 0 && !excluded.has(g.appid))
     .sort((a, b) => (b.playtime_forever || 0) - (a.playtime_forever || 0))
     .slice(0, n);
+}
+
+async function fetchRecentGames(steamId, apiKey) {
+  const d = await apiFetch('/IPlayerService/GetRecentlyPlayedGames/v1/', {
+    key: apiKey, steamid: steamId, count: TOP_N, format: 'json',
+  });
+  return (d.response && d.response.games) || [];
 }
 
 function computeMatchScore(playerTop5, friendGames, sharedCount) {
@@ -819,6 +832,13 @@ async function callStrangerOptIn(optIn, silent) {
           img_icon_url: g.img_icon_url || '',
           playtime_forever: g.playtime_forever || 0,
         })),
+        recentTop5: state.myRecentGames.filter(g => (g.playtime_2weeks || 0) > 0)
+          .sort((a, b) => (b.playtime_2weeks || 0) - (a.playtime_2weeks || 0))
+          .slice(0, TOP_N).map(g => ({
+            appid: g.appid, name: g.name,
+            img_icon_url: g.img_icon_url || '',
+            playtime_2weeks: g.playtime_2weeks || 0,
+          })),
         opt_in: optIn,
       }),
     });
@@ -1005,21 +1025,53 @@ function computeStrangerMatchScore(myTop5, strangerTop5) {
   return Math.min(((weightedSum / maxWeight) * 0.6 + (matched / TOP_N) * 0.4) * 1.3, 1.0);
 }
 
-function renderCustomMatch() {
-  const el = document.getElementById('customContent');
+function renderRecruit() {
+  const el = document.getElementById('recruitContent');
+  const mode = state._recruitMode || 'match';
   const games = state.playerGames;
   if (!games || !games.length) {
     el.innerHTML = `<div class="empty"><p>请先完成扫描</p></div>`;
     return;
   }
-  const mySteamId = state.mySteamId;
   el.innerHTML = `
+    <div class="card" style="padding:16px 20px;">
+      <div style="display:flex;gap:6px;background:#e2e8f0;border:3px solid var(--border-thick);border-radius:14px;padding:4px;">
+        <button class="recruit-mode-btn ${mode === 'match' ? 'active' : ''}" data-mode="match" title="按游戏+最低/最高时长筛选玩家">指定匹配</button>
+        <button class="recruit-mode-btn ${mode === 'recent' ? 'active' : ''}" data-mode="recent" title="按近两周活跃度推荐玩伴">近期推荐</button>
+        <button class="recruit-mode-btn ${mode === 'team' ? 'active' : ''}" data-mode="team" title="发布或加入游戏队伍">车队招募</button>
+      </div>
+    </div>
+    <div id="recruitModeContent"></div>
+  `;
+  document.querySelectorAll('.recruit-mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.recruit-mode-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      state._recruitMode = btn.dataset.mode;
+      renderRecruitModeContent();
+    });
+  });
+  renderRecruitModeContent();
+}
+
+function renderRecruitModeContent() {
+  const mode = state._recruitMode || 'match';
+  const el = document.getElementById('recruitModeContent');
+  if (mode === 'match') renderRecruitMatch(el);
+  else if (mode === 'recent') renderRecruitRecent(el);
+  else el.innerHTML = '<div class="card"><div class="card-title">车队招募</div><div class="empty"><p>即将推出</p></div></div>';
+}
+
+function renderRecruitMatch(container) {
+  const games = state.playerGames;
+  const id = 'recruitMatch';
+  container.innerHTML = `
     <div class="card">
-      <div class="card-title">自定义匹配</div>
+      <div class="card-title">指定匹配</div>
       <div class="custom-form">
         <label>
           选择游戏
-          <select id="customGameSelect">
+          <select id="${id}GameSelect">
             ${games.filter(g => (g.playtime_forever || 0) > 0).sort((a, b) => (b.playtime_forever || 0) - (a.playtime_forever || 0)).map(g => {
               const h = Math.round((g.playtime_forever || 0) / 60);
               const excluded = isExcluded(g.appid);
@@ -1027,32 +1079,41 @@ function renderCustomMatch() {
             }).join('')}
           </select>
         </label>
-        <label>
-          最低时长（小时）
-          <input type="number" id="customMinHours" value="1" min="0" step="1">
-        </label>
+        <div style="display:flex;gap:12px;">
+          <label style="flex:1;">
+            最低时长（小时）
+            <input type="number" id="${id}MinHours" value="0" min="0" step="1">
+          </label>
+          <label style="flex:1;">
+            最高时长（小时）
+            <input type="number" id="${id}MaxHours" value="" min="0" step="1" placeholder="不设上限">
+          </label>
+        </div>
         <label style="flex-direction:row;align-items:center;gap:12px;">
           <span>匹配范围</span>
           <span class="radio-group">
-            <label><input type="radio" name="customTarget" value="friends" checked> 好友</label>
-            <label><input type="radio" name="customTarget" value="strangers"> 陌生人</label>
-            <label><input type="radio" name="customTarget" value="all"> 全部</label>
+            <label><input type="radio" name="${id}Target" value="friends" checked> 好友</label>
+            <label><input type="radio" name="${id}Target" value="strangers"> 游戏搭子</label>
+            <label><input type="radio" name="${id}Target" value="all"> 全部</label>
           </span>
         </label>
-        <button class="btn btn-primary" id="runCustomMatchBtn">开始匹配</button>
+        <button class="btn btn-primary" id="${id}Btn">开始匹配</button>
       </div>
     </div>
-    <div id="customResults"></div>
+    <div id="${id}Results"></div>
   `;
-  document.getElementById('runCustomMatchBtn').addEventListener('click', runCustomMatch);
+  document.getElementById(`${id}Btn`).addEventListener('click', runRecruitMatch);
 }
 
-function runCustomMatch() {
-  const appid = parseInt(document.getElementById('customGameSelect').value);
-  const minHours = parseFloat(document.getElementById('customMinHours').value) || 0;
-  const target = document.querySelector('input[name="customTarget"]:checked').value;
+function runRecruitMatch() {
+  const id = 'recruitMatch';
+  const appid = parseInt(document.getElementById(`${id}GameSelect`).value);
+  const minHours = parseFloat(document.getElementById(`${id}MinHours`).value) || 0;
+  const maxHours = parseFloat(document.getElementById(`${id}MaxHours`).value);
+  const target = document.querySelector(`input[name="${id}Target"]:checked`).value;
   const myGame = state.playerGames.find(g => g.appid === appid);
   if (!myGame) { showToast('未找到该游戏'); return; }
+  if (maxHours && maxHours < minHours) { showToast('最高时长不能低于最低时长'); return; }
   const myHours = (myGame.playtime_forever || 0) / 60;
   const results = [];
 
@@ -1062,6 +1123,7 @@ function runCustomMatch() {
       if (!fg) continue;
       const fHours = (fg.playtime_forever || 0) / 60;
       if (fHours < minHours) continue;
+      if (maxHours && fHours > maxHours) continue;
       results.push({
         steamid: f.steamid, name: f.summary?.personaname || f.steamid,
         avatar: f.summary?.avatarmedium || '', hours: fHours,
@@ -1075,32 +1137,34 @@ function runCustomMatch() {
       if (!sg) continue;
       const sHours = (sg.playtime_forever || 0) / 60;
       if (sHours < minHours) continue;
+      if (maxHours && sHours > maxHours) continue;
       results.push({
         steamid: s.steamid, name: s.personaname || s.steamid,
         avatar: s.avatar || '', hours: sHours,
-        diff: Math.abs(myHours - sHours), source: '陌生人',
+        diff: Math.abs(myHours - sHours), source: '游戏搭子',
       });
     }
   }
 
   results.sort((a, b) => a.diff - b.diff);
 
-  const resEl = document.getElementById('customResults');
+  const resEl = document.getElementById(`${id}Results`);
   if (!results.length) {
     resEl.innerHTML = `<div class="empty"><p>未找到符合条件的玩家</p></div>`;
     return;
   }
+  const sLabel = (s) => s === '好友' ? 'var(--brand-primary)' : 'var(--brand-purple)';
   resEl.innerHTML = `
     <div class="stats-grid">
       <div class="stat-item"><div class="stat-value">${results.length}</div><div class="stat-label">匹配结果</div></div>
       <div class="stat-item"><div class="stat-value" style="font-size:16px;">${myGame.name}</div><div class="stat-label">我: ${myHours.toFixed(1)}h</div></div>
       <div class="stat-item"><div class="stat-value" style="color:var(--brand-secondary);">${results[0].hours.toFixed(1)}h</div><div class="stat-label">最接近: ${results[0].name}</div></div>
     </div>
-    <div class="card"><div class="card-title">自定义匹配结果</div><div class="friend-list">${results.map((r, i) => `
+    <div class="card"><div class="card-title">指定匹配结果</div><div class="friend-list">${results.map((r, i) => `
       <div class="friend-card" style="animation-delay:${i * 0.04}s;">
         <div class="friend-avatar">${r.avatar ? `<img src="${r.avatar}" alt="">` : `<div class="placeholder">${r.name[0]}</div>`}</div>
         <div class="friend-info">
-          <div class="friend-name">${r.name} <span class="stranger-badge" style="background:${r.source === '好友' ? 'var(--brand-primary)' : 'var(--brand-purple)'};">${r.source}</span></div>
+          <div class="friend-name">${r.name} <span class="stranger-badge" style="background:${sLabel(r.source)};">${r.source}</span></div>
           <div class="friend-meta" style="margin-top:2px;">${r.source} · ${r.hours.toFixed(1)}h</div>
         </div>
         <div class="friend-score-col">
@@ -1108,5 +1172,110 @@ function runCustomMatch() {
           <div style="font-size:11px;color:var(--text-dim);margin-top:4px;font-weight:600;">相差 ${(Math.abs(myHours - r.hours)).toFixed(1)}h</div>
         </div>
       </div>`).join('')}</div></div>
+  `;
+}
+
+function renderRecruitRecent(container) {
+  if (!state.myRecentGames || !state.myRecentGames.length) {
+    container.innerHTML = `<div class="empty"><p>暂无近期游戏数据</p></div>`;
+    return;
+  }
+
+  const myRecent = state.myRecentGames
+    .filter(g => (g.playtime_2weeks || 0) > 0)
+    .sort((a, b) => (b.playtime_2weeks || 0) - (a.playtime_2weeks || 0))
+    .slice(0, TOP_N)
+    .map(g => ({ ...g, playtime_forever: g.playtime_2weeks }));
+
+  if (!myRecent.length) {
+    container.innerHTML = `<div class="empty"><p>近两周未游玩游戏</p></div>`;
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="card">
+      <div class="card-title">我的近期游戏</div>
+      ${myRecent.map((g, i) => {
+        const h = Math.round((g.playtime_2weeks || 0) / 60);
+        const iconUrl = g.img_icon_url ? `https://media.steampowered.com/steamcommunity/public/images/apps/${g.appid}/${g.img_icon_url}.jpg` : '';
+        return `<div class="game-row">
+          ${iconUrl ? `<div class="game-icon"><img src="${iconUrl}" alt="" style="width:100%;height:100%;object-fit:cover;"></div>` : `<div class="game-icon" style="background:var(--surface);display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:10px;font-weight:800;">${i + 1}</div>`}
+          <span style="width:18px;font-size:12px;color:var(--text-muted);font-weight:600;text-align:center;">${i + 1}</span>
+          <span class="game-name">${g.name}</span>
+          <span style="color:var(--brand-primary);font-weight:600;font-size:13px;">${h}h</span>
+        </div>`;
+      }).join('')}
+    </div>
+    <div id="recentMatchResults"></div>
+  `;
+
+  if (!state.friendsRecentLoaded) {
+    loadRecentMatches(myRecent);
+  } else {
+    renderRecentResults(myRecent);
+  }
+}
+
+async function loadRecentMatches(myRecent) {
+  const container = document.getElementById('recentMatchResults');
+  container.innerHTML = `<div class="loading"><div class="spinner"></div><p>正在获取好友近期数据...</p></div>`;
+
+  const results = [];
+  for (let i = 0; i < state.friendsData.length; i++) {
+    const f = state.friendsData[i];
+    try {
+      const recent = await fetchRecentGames(f.steamid, state.myApiKey);
+      const fRecent = recent
+        .filter(g => (g.playtime_2weeks || 0) > 0)
+        .map(g => ({ ...g, playtime_forever: g.playtime_2weeks }));
+      const shared = myRecent.filter(pg => fRecent.some(fg => fg.appid === pg.appid)).length;
+      const score = computeMatchScore(myRecent, fRecent, shared);
+      results.push({ ...f, recentGames: fRecent, recentScore: score });
+    } catch (e) { console.warn(`Recent data failed: ${f.steamid}`, e); }
+  }
+
+  results.sort((a, b) => (b.recentScore || 0) - (a.recentScore || 0));
+  state.friendsRecentData = results;
+  state.friendsRecentLoaded = true;
+  renderRecentResults(myRecent);
+}
+
+function renderRecentResults(myRecent) {
+  const container = document.getElementById('recentMatchResults');
+  const data = state.friendsRecentData;
+
+  if (!data || !data.length) {
+    container.innerHTML = `<div class="empty"><p>无法获取好友近期数据</p></div>`;
+    return;
+  }
+
+  const best = data.reduce((a, b) => (a.recentScore || 0) > (b.recentScore || 0) ? a : b);
+  container.innerHTML = `
+    <div class="stats-grid">
+      <div class="stat-item"><div class="stat-value">${data.length}</div><div class="stat-label">好友分析</div></div>
+      <div class="stat-item"><div class="stat-value">${data.filter(x => (x.recentScore || 0) > 0.3).length}</div><div class="stat-label">近期活跃</div></div>
+      <div class="stat-item"><div class="stat-value" style="color:var(--brand-success);">${((best.recentScore || 0) * 100).toFixed(1)}%</div><div class="stat-label">最佳匹配</div></div>
+    </div>
+    <div class="card"><div class="card-title">近期推荐 · 好友</div><div class="friend-list">${data.map((f, i) => {
+      const pct = ((f.recentScore || 0) * 100).toFixed(1);
+      const name = f.summary?.personaname || f.steamid;
+      const avatar = f.summary?.avatarmedium || '';
+      const dots = myRecent.map(pg => {
+        const owns = (f.recentGames || []).some(fg => fg.appid === pg.appid);
+        return `<span class="top5-dot ${owns ? 'owned' : 'missing'}" title="${pg.name}">${owns ? '✓' : '–'}</span>`;
+      }).join('');
+      return `<div class="friend-card" style="animation-delay:${i * 0.04}s;">
+        <div class="friend-avatar">${avatar ? `<img src="${avatar}" alt="">` : `<div class="placeholder">${name[0]}</div>`}</div>
+        <div class="friend-info">
+          <div class="friend-name">${name}</div>
+          <div class="friend-meta">近期活跃 · 匹配 ${pct}%</div>
+          <div class="top5-dots">${dots}</div>
+        </div>
+        <div class="friend-score-col">
+          <div class="score-value" style="color:${scoreColor(parseFloat(pct))}">${pct}%</div>
+          <div class="score-bar"><div class="score-bar-fill" style="width:${pct}%;background:${scoreColor(parseFloat(pct))}"></div></div>
+        </div>
+      </div>`;
+    }).join('')}</div></div>
   `;
 }
