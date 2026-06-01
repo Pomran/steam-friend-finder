@@ -30,7 +30,7 @@ export async function onRequest(context) {
     }));
 
     return new Response(JSON.stringify(parsed), {
-      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'public, s-maxage=300' },
     });
   } catch (err) {
     return new Response(JSON.stringify({ error: err.message }), {

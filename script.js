@@ -32,6 +32,8 @@ function steamApiUrl(endpoint, params) {
 
 const apiCache = new Map();
 const CACHE_TTL = 10 * 60 * 1000;
+const strangersCache = { data: null, ts: 0 };
+const STRANGERS_CACHE_TTL = 2 * 60 * 1000;
 
 function getExcludedSet() {
   try { return new Set(JSON.parse(localStorage.getItem('excludedGames') || '[]')); } catch { return new Set(); }
@@ -885,10 +887,16 @@ async function callStrangerOptIn(optIn, silent) {
   }
 }
 
-async function loadStrangers() {
+async function loadStrangers(force) {
   const el = document.getElementById('strangersContent');
   if (!state.mySteamId) {
     el.innerHTML = `<div class="empty"><p>请先完成扫描</p></div>`;
+    return;
+  }
+  if (!force && strangersCache.data && Date.now() - strangersCache.ts < STRANGERS_CACHE_TTL) {
+    state.strangersData = strangersCache.data;
+    state.strangersError = null;
+    renderStrangers();
     return;
   }
   el.innerHTML = `<div class="loading"><div class="spinner"></div><p>正在寻找陌生玩伴...</p></div>`;
@@ -898,9 +906,13 @@ async function loadStrangers() {
     const data = await res.json();
     state.strangersData = data || [];
     state.strangersError = null;
+    strangersCache.data = state.strangersData;
+    strangersCache.ts = Date.now();
   } catch (err) {
-    state.strangersData = null;
-    state.strangersError = err.message || '网络错误';
+    if (!strangersCache.data) {
+      state.strangersData = null;
+      state.strangersError = err.message || '网络错误';
+    }
     console.warn('Load strangers failed:', err);
   }
   renderStrangers();
@@ -949,6 +961,8 @@ function renderStrangers() {
       const on = e.target.checked;
       localStorage.setItem('strangerOptIn', on ? 'true' : 'false');
       await callStrangerOptIn(on);
+      strangersCache.ts = 0;
+      loadStrangers(true);
     });
   }
 }
