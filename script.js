@@ -1174,14 +1174,19 @@ function renderRecruitCard(post, showKick) {
   if (meta.goal) badges.push(meta.goal);
   if (meta.time) badges.push(meta.time);
   const badgeClass = b => { const m={'新坑':'badge-purple','娱乐':'badge-green','冲分':'badge-red','日常':'badge-blue','早上':'badge-amber','下午':'badge-orange','晚上':'badge-indigo','深夜':'badge-violet'}; return m[b]||'badge-gray'; };
+  const cardId = `rc-${post.id}`;
   const memberAvatars = members.map((m, idx) => {
-    const kickBtn = showKick && isCreator && m.steamid !== state.mySteamId ? `<button class="recruit-kick-btn" onclick="event.stopPropagation();kickMember(${post.id},'${m.steamid}')">×</button>` : '';
-    const avatar = m.avatar ? `<img src="${m.avatar}" alt="">` : `<div class="placeholder">${(m.personaname||'?')[0]}</div>`;
-    return `<div class="recruit-member-avatar${kickBtn ? ' is-kickable' : ''}" title="${m.personaname || m.steamid}">${avatar}${kickBtn}</div>`;
+    const href = `https://steamcommunity.com/profiles/${m.steamid}`;
+    const avatarHtml = m.avatar ? `<img src="${m.avatar}" alt="" loading="lazy">` : `<div class="placeholder">${(m.personaname||'?')[0]}</div>`;
+    if (showKick && isCreator && m.steamid !== state.mySteamId) {
+      return `<div class="recruit-member-avatar is-kickable" title="${m.personaname || m.steamid}"><a href="${href}" target="_blank">${avatarHtml}</a><button class="recruit-kick-btn" onclick="event.stopPropagation();kickMember(${post.id},'${m.steamid}')">×</button></div>`;
+    }
+    return `<a class="recruit-member-avatar" href="${href}" target="_blank" title="${m.personaname || m.steamid}">${avatarHtml}</a>`;
   }).join('');
+  const memberNames = members.map(m => `<a href="https://steamcommunity.com/profiles/${m.steamid}" target="_blank" style="color:var(--brand-purple);text-decoration:none;font-weight:600;">${m.personaname || m.steamid}</a>`).join(' · ');
   return `<div class="recruit-card">
     <div class="recruit-card-top">
-      <div class="recruit-game-icon">${iconUrl ? `<img src="${iconUrl}" alt="">` : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:var(--surface);font-weight:700;font-size:10px;">G</div>`}</div>
+      <div class="recruit-game-icon">${iconUrl ? `<img src="${iconUrl}" alt="" loading="lazy">` : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:var(--surface);font-weight:700;font-size:10px;">G</div>`}</div>
       <div class="recruit-game-info">
         <div class="recruit-game-name">${post.game_name}</div>
         <div class="recruit-meta">${badges.length ? badges.map(b => `<span class="recruit-badge ${badgeClass(b)}">${b}</span>`).join(' ') : ''} ${memberCount}/${post.max_members} 人 · ${timeAgo(post.created_at)}</div>
@@ -1191,6 +1196,11 @@ function renderRecruitCard(post, showKick) {
     <div class="recruit-creator">
       <span style="color:var(--text-dim);font-weight:600;">${post.creator_name || post.creator_steamid}</span>
       ${isCreator ? '<span class="stranger-badge" style="margin-left:4px;">创建者</span>' : ''}
+    </div>
+    <button class="btn btn-ghost" onclick="const e=document.getElementById('${cardId}');e.style.display=e.style.display==='block'?'none':'block';this.textContent=this.textContent==='收起详情'?'展开详情':'收起详情'" style="font-size:11px;padding:2px 8px;margin-bottom:8px;color:var(--text-muted);">展开详情</button>
+    <div id="${cardId}" style="display:none;font-size:12px;color:var(--text-dim);line-height:1.6;margin-bottom:10px;padding:8px 12px;background:var(--bg);border-radius:8px;">
+      <div>成员：${memberNames || '-'}</div>
+      <div style="margin-top:4px;">创建时间：${new Date(post.created_at).toLocaleString('zh-CN')}</div>
     </div>
     <div class="recruit-card-actions">
       ${post.status === 0 ? '<span class="stranger-badge" style="background:var(--text-muted);">已关闭</span>' :
