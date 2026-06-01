@@ -1033,12 +1033,32 @@ function renderRecruit() {
     el.innerHTML = `<div class="empty"><p>请先完成扫描</p></div>`;
     return;
   }
+  if (!document.getElementById('recruitStyles')) {
+    const s = document.createElement('style');
+    s.id = 'recruitStyles';
+    s.textContent = `
+      .recruit-mode-btn{flex:1;padding:12px 14px;border-radius:12px;border:2.5px solid transparent;font-weight:900;font-size:13px;cursor:pointer;transition:all 0.2s;background:transparent;color:var(--text-dim);position:relative;text-align:center;}
+      .recruit-mode-btn:hover{background:rgba(255,255,255,0.5);}
+      .recruit-mode-btn.active{background:#fff0f0;color:var(--brand-primary);border-color:var(--border-thick);box-shadow:2px 2px 0 var(--border-thick);}
+      .recruit-mode-btn.active::before{content:'';position:absolute;left:-1px;top:7px;bottom:7px;width:4px;background:var(--brand-primary);border-radius:0 3px 3px 0;border:2px solid var(--border-thick);border-left:none;}
+    `;
+    document.head.appendChild(s);
+  }
   el.innerHTML = `
-    <div class="card" style="padding:16px 20px;">
-      <div style="display:flex;gap:6px;background:#e2e8f0;border:3px solid var(--border-thick);border-radius:14px;padding:4px;">
-        <button class="recruit-mode-btn ${mode === 'match' ? 'active' : ''}" data-mode="match" title="按游戏+最低/最高时长筛选玩家">指定匹配</button>
-        <button class="recruit-mode-btn ${mode === 'recent' ? 'active' : ''}" data-mode="recent" title="按近两周活跃度推荐玩伴">近期推荐</button>
-        <button class="recruit-mode-btn ${mode === 'team' ? 'active' : ''}" data-mode="team" title="发布或加入游戏队伍">车队招募</button>
+    <div class="card" style="padding:20px;">
+      <div style="display:flex;gap:6px;background:#e2e8f0;border:3px solid var(--border-thick);border-radius:16px;padding:5px;">
+        <button class="recruit-mode-btn ${mode === 'match' ? 'active' : ''}" data-mode="match">
+          <div>指定匹配</div>
+          <div style="font-size:11px;font-weight:600;opacity:0.6;margin-top:3px;">按游戏+时长筛选</div>
+        </button>
+        <button class="recruit-mode-btn ${mode === 'recent' ? 'active' : ''}" data-mode="recent">
+          <div>近期推荐</div>
+          <div style="font-size:11px;font-weight:600;opacity:0.6;margin-top:3px;">按近两周活跃度推荐</div>
+        </button>
+        <button class="recruit-mode-btn ${mode === 'team' ? 'active' : ''}" data-mode="team">
+          <div>车队招募</div>
+          <div style="font-size:11px;font-weight:600;opacity:0.6;margin-top:3px;">发布或加入游戏队伍</div>
+        </button>
       </div>
     </div>
     <div id="recruitModeContent"></div>
@@ -1206,68 +1226,84 @@ function renderRecruitRecent(container) {
         </div>`;
       }).join('')}
     </div>
+    <div class="card">
+      <div class="custom-form">
+        <label style="flex-direction:row;align-items:center;gap:12px;">
+          <span>匹配范围</span>
+          <span class="radio-group">
+            <label><input type="radio" name="recentTarget" value="friends" checked> 好友</label>
+            <label><input type="radio" name="recentTarget" value="strangers"> 游戏搭子</label>
+            <label><input type="radio" name="recentTarget" value="all"> 全部</label>
+          </span>
+        </label>
+        <button class="btn btn-primary" id="runRecentMatchBtn">开始匹配</button>
+      </div>
+    </div>
     <div id="recentMatchResults"></div>
   `;
-
-  if (!state.friendsRecentLoaded) {
-    loadRecentMatches(myRecent);
-  } else {
-    renderRecentResults(myRecent);
-  }
+  document.getElementById('runRecentMatchBtn').addEventListener('click', () => runRecentMatch(myRecent));
 }
 
-async function loadRecentMatches(myRecent) {
+async function runRecentMatch(myRecent) {
+  const target = document.querySelector('input[name="recentTarget"]:checked').value;
   const container = document.getElementById('recentMatchResults');
-  container.innerHTML = `<div class="loading"><div class="spinner"></div><p>正在获取好友近期数据...</p></div>`;
+  const allResults = [];
 
-  const results = [];
-  for (let i = 0; i < state.friendsData.length; i++) {
-    const f = state.friendsData[i];
-    try {
-      const recent = await fetchRecentGames(f.steamid, state.myApiKey);
-      const fRecent = recent
-        .filter(g => (g.playtime_2weeks || 0) > 0)
-        .map(g => ({ ...g, playtime_forever: g.playtime_2weeks }));
-      const shared = myRecent.filter(pg => fRecent.some(fg => fg.appid === pg.appid)).length;
-      const score = computeMatchScore(myRecent, fRecent, shared);
-      results.push({ ...f, recentGames: fRecent, recentScore: score });
-    } catch (e) { console.warn(`Recent data failed: ${f.steamid}`, e); }
+  if (target === 'friends' || target === 'all') {
+    container.innerHTML = `<div class="loading"><div class="spinner"></div><p>正在获取好友近期数据...</p></div>`;
+    const fResults = [];
+    for (let i = 0; i < state.friendsData.length; i++) {
+      const f = state.friendsData[i];
+      try {
+        const recent = await fetchRecentGames(f.steamid, state.myApiKey);
+        const fRecent = recent.filter(g => (g.playtime_2weeks || 0) > 0).map(g => ({ ...g, playtime_forever: g.playtime_2weeks }));
+        const shared = myRecent.filter(pg => fRecent.some(fg => fg.appid === pg.appid)).length;
+        const score = computeMatchScore(myRecent, fRecent, shared);
+        fResults.push({ steamid: f.steamid, name: f.summary?.personaname || f.steamid, avatar: f.summary?.avatarmedium || '', score, games: fRecent, source: '好友' });
+      } catch (e) { console.warn(`Recent failed: ${f.steamid}`, e); }
+    }
+    state.friendsRecentData = fResults;
+    state.friendsRecentLoaded = true;
+    allResults.push(...fResults);
   }
 
-  results.sort((a, b) => (b.recentScore || 0) - (a.recentScore || 0));
-  state.friendsRecentData = results;
-  state.friendsRecentLoaded = true;
-  renderRecentResults(myRecent);
-}
+  if (target === 'strangers' || target === 'all') {
+    if (state.strangersData && state.strangersData.length) {
+      for (const s of state.strangersData) {
+        const sRecent = (s.recentTop5 || []).filter(g => (g.playtime_2weeks || 0) > 0).map(g => ({ ...g, playtime_forever: g.playtime_2weeks }));
+        if (!sRecent.length) continue;
+        const shared = myRecent.filter(pg => sRecent.some(sg => sg.appid === pg.appid)).length;
+        const score = computeMatchScore(myRecent, sRecent, shared);
+        allResults.push({ steamid: s.steamid, name: s.personaname || s.steamid, avatar: s.avatar || '', score, games: sRecent, source: '游戏搭子' });
+      }
+    }
+  }
 
-function renderRecentResults(myRecent) {
-  const container = document.getElementById('recentMatchResults');
-  const data = state.friendsRecentData;
+  allResults.sort((a, b) => (b.score || 0) - (a.score || 0));
 
-  if (!data || !data.length) {
-    container.innerHTML = `<div class="empty"><p>无法获取好友近期数据</p></div>`;
+  if (!allResults.length) {
+    container.innerHTML = `<div class="empty"><p>未找到匹配结果</p></div>`;
     return;
   }
 
-  const best = data.reduce((a, b) => (a.recentScore || 0) > (b.recentScore || 0) ? a : b);
+  const best = allResults.reduce((a, b) => (a.score || 0) > (b.score || 0) ? a : b);
+  const sColor = (s) => s === '好友' ? 'var(--brand-primary)' : 'var(--brand-purple)';
   container.innerHTML = `
     <div class="stats-grid">
-      <div class="stat-item"><div class="stat-value">${data.length}</div><div class="stat-label">好友分析</div></div>
-      <div class="stat-item"><div class="stat-value">${data.filter(x => (x.recentScore || 0) > 0.3).length}</div><div class="stat-label">近期活跃</div></div>
-      <div class="stat-item"><div class="stat-value" style="color:var(--brand-success);">${((best.recentScore || 0) * 100).toFixed(1)}%</div><div class="stat-label">最佳匹配</div></div>
+      <div class="stat-item"><div class="stat-value">${allResults.length}</div><div class="stat-label">匹配结果</div></div>
+      <div class="stat-item"><div class="stat-value">${allResults.filter(x => (x.score || 0) > 0.3).length}</div><div class="stat-label">近期活跃</div></div>
+      <div class="stat-item"><div class="stat-value" style="color:var(--brand-success);">${((best.score || 0) * 100).toFixed(1)}%</div><div class="stat-label">最佳匹配</div></div>
     </div>
-    <div class="card"><div class="card-title">近期推荐 · 好友</div><div class="friend-list">${data.map((f, i) => {
-      const pct = ((f.recentScore || 0) * 100).toFixed(1);
-      const name = f.summary?.personaname || f.steamid;
-      const avatar = f.summary?.avatarmedium || '';
+    <div class="card"><div class="card-title">近期推荐</div><div class="friend-list">${allResults.map((r, i) => {
+      const pct = ((r.score || 0) * 100).toFixed(1);
       const dots = myRecent.map(pg => {
-        const owns = (f.recentGames || []).some(fg => fg.appid === pg.appid);
+        const owns = (r.games || []).some(g => g.appid === pg.appid);
         return `<span class="top5-dot ${owns ? 'owned' : 'missing'}" title="${pg.name}">${owns ? '✓' : '–'}</span>`;
       }).join('');
       return `<div class="friend-card" style="animation-delay:${i * 0.04}s;">
-        <div class="friend-avatar">${avatar ? `<img src="${avatar}" alt="">` : `<div class="placeholder">${name[0]}</div>`}</div>
+        <div class="friend-avatar">${r.avatar ? `<img src="${r.avatar}" alt="">` : `<div class="placeholder">${r.name[0]}</div>`}</div>
         <div class="friend-info">
-          <div class="friend-name">${name}</div>
+          <div class="friend-name">${r.name} <span class="stranger-badge" style="background:${sColor(r.source)};">${r.source}</span></div>
           <div class="friend-meta">近期活跃 · 匹配 ${pct}%</div>
           <div class="top5-dots">${dots}</div>
         </div>
