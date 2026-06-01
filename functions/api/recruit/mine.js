@@ -16,12 +16,12 @@ export async function onRequest(context) {
     min_hours INTEGER NOT NULL DEFAULT 0,
     max_members INTEGER NOT NULL DEFAULT 4,
     member_list TEXT NOT NULL DEFAULT '[]',
+    team_type TEXT NOT NULL DEFAULT '',
     status INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT '',
     updated_at TEXT NOT NULL DEFAULT ''
   )`);
-  const { results: cols } = await db.prepare("PRAGMA table_info('recruiting_posts')").all();
-  if (!cols.some(c => c.name === 'team_type')) {
+  try { await db.prepare("SELECT team_type FROM recruiting_posts LIMIT 0").all(); } catch {
     await db.exec("ALTER TABLE recruiting_posts ADD COLUMN team_type TEXT NOT NULL DEFAULT ''");
   }
   const url = new URL(request.url);
