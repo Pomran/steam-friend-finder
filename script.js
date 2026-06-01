@@ -949,6 +949,7 @@ function renderStrangersResults() {
         ${hasMore ? `<button class="btn btn-ghost" onclick="loadMoreStrangers()" style="width:100%;margin-top:16px;">显示更多（${scored.length - strangersDisplayCount} 人）</button>` : ''}
     </div>
   `;
+  }
 }
 
 // ====== 车队招募 ======
@@ -1176,7 +1177,6 @@ function renderMyRecruits() {
   }
   html += `</div>`;
   el.innerHTML = html;
-}
 }
 
 function loadMoreStrangers() {
