@@ -1060,7 +1060,8 @@ function renderRecruitCard(post) {
   const isCreator = state.mySteamId === post.creator_steamid;
   const isMember = members.some(m => m.steamid === state.mySteamId);
   const isFull = memberCount >= post.max_members;
-  const iconUrl = post.game_img_icon_url ? `https://media.steampowered.com/steamcommunity/public/images/apps/${post.game_appid}/${post.game_img_icon_url}.jpg` : '';
+  const appid = parseInt(post.game_appid);
+  const iconUrl = post.game_img_icon_url ? `https://media.steampowered.com/steamcommunity/public/images/apps/${appid}/${post.game_img_icon_url}.jpg` : '';
   return `<div class="recruit-card">
     <div class="recruit-card-top">
       <div class="recruit-game-icon">${iconUrl ? `<img src="${iconUrl}" alt="">` : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:var(--surface);font-weight:700;font-size:10px;">G</div>`}</div>
