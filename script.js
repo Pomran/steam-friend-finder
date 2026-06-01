@@ -1392,7 +1392,7 @@ function renderRecruitModeContent() {
   else if (mode === 'recent') renderRecruitRecent(el);
   else {
     try { renderRecruitTeam(el); }
-    catch (e) { console.error('Recruit team error:', e); el.innerHTML = '<div class="card"><div class="empty"><p>车队招募暂时不可用</p></div></div>'; }
+    catch (e) { console.error('Recruit team error:', e); el.innerHTML = `<div class="card"><div class="empty"><p>车队招募暂时不可用: ${e.message}</p></div></div>`; }
   }
 }
 
