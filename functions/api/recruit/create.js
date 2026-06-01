@@ -12,17 +12,18 @@ export async function onRequest(context) {
   try { body = await request.json(); } catch {
     return new Response(JSON.stringify({ error: 'Invalid JSON' }), { status: 400, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
   }
-  const { creator_steamid, creator_name, creator_avatar, game_appid, game_name, game_img_icon_url, max_members, description } = body;
+  const { creator_steamid, creator_name, creator_avatar, game_appid, game_name, game_img_icon_url, max_members, description, goal_type, play_time } = body;
   if (!creator_steamid || !game_appid) {
     return new Response(JSON.stringify({ error: 'Missing creator_steamid or game_appid' }), { status: 400, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
   }
   const now = new Date().toISOString();
+  const descJson = JSON.stringify({ d: description || '', g: goal_type || '', t: play_time || '' });
   const memberList = JSON.stringify([{ steamid: creator_steamid, personaname: creator_name || '', avatar: creator_avatar || '' }]);
   try {
     const { meta } = await db.prepare(
       `INSERT INTO recruiting_posts (creator_steamid, creator_name, creator_avatar, game_appid, game_name, game_img_icon_url, max_members, member_list, description, status, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
-    ).bind(creator_steamid, creator_name || '', creator_avatar || '', game_appid, game_name || '', game_img_icon_url || '', max_members || 4, memberList, description || '', now, now).run();
+    ).bind(creator_steamid, creator_name || '', creator_avatar || '', game_appid, game_name || '', game_img_icon_url || '', max_members || 4, memberList, descJson, now, now).run();
     return new Response(JSON.stringify({ success: true, id: meta.last_row_id }), {
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
     });
