@@ -34,6 +34,8 @@ const apiCache = new Map();
 const CACHE_TTL = 10 * 60 * 1000;
 const strangersCache = { data: null, ts: 0 };
 const STRANGERS_CACHE_TTL = 2 * 60 * 1000;
+const STRANGERS_PAGE_SIZE = 10;
+let strangersDisplayCount = STRANGERS_PAGE_SIZE;
 
 function getExcludedSet() {
   try { return new Set(JSON.parse(localStorage.getItem('excludedGames') || '[]')); } catch { return new Set(); }
@@ -233,6 +235,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('recruitContent').addEventListener('click', (e) => {
     const card = e.target.closest('.friend-card');
     if (card && card.dataset.steamid) {
+      if (state._recruitMode === 'team') return;
       const sid = card.dataset.steamid;
       if (state._recruitMode === 'recent') {
         showRecentDetail(sid);
@@ -822,7 +825,6 @@ function switchTab(tabId) {
   const target = document.getElementById(tabId);
   if (target) {
     target.classList.add('active');
-    target.classList.add('visited');
   }
   const btn = document.querySelector(`[data-tab="${tabId}"]`);
   if (btn) btn.classList.add('active');
@@ -933,15 +935,253 @@ function renderStrangersResults() {
       ...s,
       score: computeStrangerMatchScore(myTop5, s.top5 || []),
     })).sort((a, b) => b.score - a.score);
+    const display = scored.slice(0, strangersDisplayCount);
+    const hasMore = scored.length > strangersDisplayCount;
     el.innerHTML = `
       <div class="stats-grid">
         <div class="stat-item"><div class="stat-value">${scored.length}</div><div class="stat-label">陌生玩伴</div></div>
         <div class="stat-item"><div class="stat-value">${scored.filter(x => x.score > 0.3).length}</div><div class="stat-label">高度匹配</div></div>
         <div class="stat-item"><div class="stat-value" style="color:var(--brand-purple);">${(scored[0].score * 100).toFixed(1)}%</div><div class="stat-label">最佳匹配</div></div>
       </div>
-      <div class="card"><div class="card-title">陌生玩伴 <span class="stranger-badge">陌生人</span></div><div class="friend-list">${scored.map((s, i) => renderStrangerCard(s, i)).join('')}</div></div>
-    `;
+      <div class="card">
+        <div class="card-title">陌生玩伴 <span class="stranger-badge">陌生人</span></div>
+        <div class="friend-list">${display.map((s, i) => renderStrangerCard(s, i)).join('')}</div>
+        ${hasMore ? `<button class="btn btn-ghost" onclick="loadMoreStrangers()" style="width:100%;margin-top:16px;">显示更多（${scored.length - strangersDisplayCount} 人）</button>` : ''}
+    </div>
+  `;
+}
+
+// ====== 车队招募 ======
+
+let recruitPosts = null;
+let myRecruits = null;
+
+function renderRecruitTeam(container) {
+  const games = state.playerGames.filter(g => (g.playtime_forever || 0) > 0).sort((a, b) => (b.playtime_forever || 0) - (a.playtime_forever || 0));
+  container.innerHTML = `
+    <div class="card">
+      <div class="card-title">创建招募</div>
+      <div class="custom-form">
+        <label>
+          选择游戏
+          <select id="recruitTeamGameSelect">
+            ${games.map(g => `<option value="${g.appid}">${g.name}</option>`).join('')}
+          </select>
+        </label>
+        <label>
+          招募说明
+          <textarea id="recruitTeamDesc" rows="3" placeholder="例：找车队队友，每晚20-23点活动"></textarea>
+        </label>
+        <div style="display:flex;gap:12px;">
+          <label style="flex:1;">
+            最低时长（小时）
+            <input type="number" id="recruitTeamMinHours" value="0" min="0">
+          </label>
+          <label style="flex:1;">
+            最大人数
+            <select id="recruitTeamMaxMembers">
+              ${[2,3,4,5,6].map(n => `<option value="${n}" ${n===4?'selected':''}>${n}人队</option>`).join('')}
+            </select>
+          </label>
+        </div>
+        <button class="btn btn-primary" onclick="createRecruitPost()">发布招募</button>
+      </div>
+    </div>
+    <div id="recruitTeamOpenList"></div>
+    <div id="recruitTeamMyList"></div>
+  `;
+  loadRecruitPosts();
+  loadMyRecruits();
+}
+
+async function createRecruitPost() {
+  if (!state.mySteamId || !state.myProfile) { showToast('请先完成扫描'); return; }
+  const gameSelect = document.getElementById('recruitTeamGameSelect');
+  const appid = parseInt(gameSelect.value);
+  const game = state.playerGames.find(g => g.appid === appid);
+  if (!game) { showToast('请选择游戏'); return; }
+  const desc = document.getElementById('recruitTeamDesc').value.trim();
+  if (!desc) { showToast('请填写招募说明'); return; }
+  const minHours = parseInt(document.getElementById('recruitTeamMinHours').value) || 0;
+  const maxMembers = parseInt(document.getElementById('recruitTeamMaxMembers').value) || 4;
+  try {
+    const res = await fetch('/api/recruit/create', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        creator_steamid: state.mySteamId,
+        creator_name: state.myProfile.personaname || '',
+        creator_avatar: state.myProfile.avatarfull || state.myProfile.avatarmedium || '',
+        game_appid: appid,
+        game_name: game.name,
+        game_img_icon_url: game.img_icon_url || '',
+        description: desc,
+        min_hours: minHours,
+        max_members: maxMembers,
+      }),
+    });
+    if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error || `HTTP ${res.status}`); }
+    showToast('招募已发布');
+    document.getElementById('recruitTeamDesc').value = '';
+    loadRecruitPosts();
+    loadMyRecruits();
+  } catch (err) {
+    showToast('发布失败: ' + err.message);
   }
+}
+
+async function loadRecruitPosts() {
+  const el = document.getElementById('recruitTeamOpenList');
+  if (!el) return;
+  el.innerHTML = `<div class="loading"><div class="spinner"></div><p>加载招募列表...</p></div>`;
+  try {
+    const res = await fetch('/api/recruit/list');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    recruitPosts = data.posts || [];
+  } catch (err) {
+    recruitPosts = [];
+    console.warn('Load recruit posts failed:', err);
+  }
+  renderRecruitPosts();
+}
+
+function renderRecruitPosts() {
+  const el = document.getElementById('recruitTeamOpenList');
+  if (!el) return;
+  const posts = recruitPosts || [];
+  if (!posts.length) {
+    el.innerHTML = `<div class="empty"><p>暂无公开招募</p></div>`;
+    return;
+  }
+  el.innerHTML = `
+    <div class="card"><div class="card-title">公开招募</div>
+      <div class="recruit-list">${posts.map(renderRecruitCard).join('')}</div>
+    </div>
+  `;
+}
+
+function renderRecruitCard(post) {
+  const members = post.member_list || [];
+  const memberCount = members.length;
+  const isCreator = state.mySteamId === post.creator_steamid;
+  const isMember = members.some(m => m.steamid === state.mySteamId);
+  const isFull = memberCount >= post.max_members;
+  const iconUrl = post.game_img_icon_url ? `https://media.steampowered.com/steamcommunity/public/images/apps/${post.game_appid}/${post.game_img_icon_url}.jpg` : '';
+  return `<div class="recruit-card">
+    <div class="recruit-card-top">
+      <div class="recruit-game-icon">${iconUrl ? `<img src="${iconUrl}" alt="">` : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:var(--surface);font-weight:700;font-size:10px;">G</div>`}</div>
+      <div class="recruit-game-info">
+        <div class="recruit-game-name">${post.game_name}</div>
+        <div class="recruit-meta">${post.min_hours ? `最低 ${post.min_hours}h · ` : ''}${memberCount}/${post.max_members} 人</div>
+      </div>
+    </div>
+    <div class="recruit-desc">${post.description}</div>
+    <div class="recruit-creator">
+      <div class="recruit-creator-avatar">${post.creator_avatar ? `<img src="${post.creator_avatar}" alt="">` : `<div class="placeholder">${(post.creator_name||'?')[0]}</div>`}</div>
+      <span>${post.creator_name || post.creator_steamid}</span>
+      ${isCreator ? '<span class="stranger-badge" style="margin-left:6px;">创建者</span>' : ''}
+    </div>
+    <div class="recruit-card-actions">
+      ${post.status === 0 ? '<span class="stranger-badge" style="background:var(--text-muted);">已关闭</span>' :
+        isCreator ? `<button class="btn btn-ghost" onclick="closeRecruitPost(${post.id})">关闭</button>` :
+        isMember ? `<button class="btn btn-ghost" onclick="leaveRecruitPost(${post.id})">退出</button>` :
+        isFull ? '<span class="stranger-badge" style="background:var(--text-muted);">已满员</span>' :
+        `<button class="btn btn-primary" onclick="joinRecruitPost(${post.id})">加入</button>`}
+    </div>
+  </div>`;
+}
+
+async function joinRecruitPost(postId) {
+  if (!state.mySteamId || !state.myProfile) { showToast('请先完成扫描'); return; }
+  try {
+    const res = await fetch('/api/recruit/join', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ post_id: postId, steamid: state.mySteamId, personaname: state.myProfile.personaname || '', avatar: state.myProfile.avatarfull || state.myProfile.avatarmedium || '' }),
+    });
+    if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error || `HTTP ${res.status}`); }
+    showToast('已加入该招募');
+    loadRecruitPosts();
+    loadMyRecruits();
+  } catch (err) {
+    showToast(err.message);
+  }
+}
+
+async function leaveRecruitPost(postId) {
+  if (!state.mySteamId) return;
+  try {
+    const res = await fetch('/api/recruit/leave', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ post_id: postId, steamid: state.mySteamId }),
+    });
+    if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error || `HTTP ${res.status}`); }
+    showToast('已退出该招募');
+    loadRecruitPosts();
+    loadMyRecruits();
+  } catch (err) {
+    showToast(err.message);
+  }
+}
+
+async function closeRecruitPost(postId) {
+  if (!state.mySteamId) return;
+  try {
+    const res = await fetch('/api/recruit/close', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ post_id: postId, steamid: state.mySteamId }),
+    });
+    if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error || `HTTP ${res.status}`); }
+    showToast('招募已关闭');
+    loadRecruitPosts();
+    loadMyRecruits();
+  } catch (err) {
+    showToast(err.message);
+  }
+}
+
+async function loadMyRecruits() {
+  const el = document.getElementById('recruitTeamMyList');
+  if (!el) return;
+  if (!state.mySteamId) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="loading"><div class="spinner"></div><p>加载我的招募...</p></div>`;
+  try {
+    const res = await fetch(`/api/recruit/mine?steamid=${encodeURIComponent(state.mySteamId)}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    myRecruits = await res.json();
+  } catch (err) {
+    myRecruits = [];
+    console.warn('Load my recruits failed:', err);
+  }
+  renderMyRecruits();
+}
+
+function renderMyRecruits() {
+  const el = document.getElementById('recruitTeamMyList');
+  if (!el) return;
+  const posts = myRecruits || [];
+  if (!posts.length) {
+    el.innerHTML = `<div class="empty"><p>你还没有参与任何招募</p></div>`;
+    return;
+  }
+  const created = posts.filter(p => p.creator_steamid === state.mySteamId);
+  const joined = posts.filter(p => p.creator_steamid !== state.mySteamId && (p.member_list || []).some(m => m.steamid === state.mySteamId));
+  let html = `<div class="card"><div class="card-title">我的招募</div>`;
+  if (created.length) {
+    html += `<div style="font-size:12px;color:var(--text-dim);font-weight:600;margin:0 0 8px 16px;">创建的（${created.length}）</div>
+      <div class="recruit-list">${created.map(renderRecruitCard).join('')}</div>`;
+  }
+  if (joined.length) {
+    html += `<div style="font-size:12px;color:var(--text-dim);font-weight:600;margin:${created.length?'16px 0 8px 16px':'0 0 8px 16px'};">加入的（${joined.length}）</div>
+      <div class="recruit-list">${joined.map(renderRecruitCard).join('')}</div>`;
+  }
+  html += `</div>`;
+  el.innerHTML = html;
+}
+}
+
+function loadMoreStrangers() {
+  strangersDisplayCount += STRANGERS_PAGE_SIZE;
+  renderStrangersResults();
 }
 
 async function loadStrangers(force) {
@@ -967,6 +1207,7 @@ async function loadStrangers(force) {
     state.strangersError = null;
     strangersCache.data = state.strangersData;
     strangersCache.ts = Date.now();
+    strangersDisplayCount = STRANGERS_PAGE_SIZE;
   } catch (err) {
     if (!strangersCache.data) {
       state.strangersData = null;
@@ -1097,6 +1338,20 @@ function renderRecruit() {
       .recruit-mode-btn:hover{background:rgba(255,255,255,0.5);}
       .recruit-mode-btn.active{background:#fff0f0;color:var(--brand-primary);border-color:var(--border-thick);box-shadow:2px 2px 0 var(--border-thick);}
       .recruit-mode-btn.active::before{content:'';position:absolute;left:-1px;top:7px;bottom:7px;width:4px;background:var(--brand-primary);border-radius:0 3px 3px 0;border:2px solid var(--border-thick);border-left:none;}
+      .recruit-list{display:flex;flex-direction:column;gap:10px;}
+      .recruit-card{background:var(--surface);border:3px solid var(--border-thick);border-radius:16px;padding:16px;}
+      .recruit-card-top{display:flex;gap:12px;align-items:center;margin-bottom:10px;}
+      .recruit-game-icon{width:44px;height:44px;border-radius:10px;overflow:hidden;flex-shrink:0;border:2px solid var(--border-thick);}
+      .recruit-game-icon img{width:100%;height:100%;object-fit:cover;}
+      .recruit-game-info{flex:1;}
+      .recruit-game-name{font-weight:700;font-size:14px;color:var(--text);}
+      .recruit-meta{font-size:12px;color:var(--text-dim);font-weight:600;margin-top:2px;}
+      .recruit-desc{font-size:13px;color:var(--text);line-height:1.5;margin-bottom:10px;padding:8px 12px;background:var(--bg);border-radius:8px;}
+      .recruit-creator{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-dim);font-weight:600;margin-bottom:12px;}
+      .recruit-creator-avatar{width:24px;height:24px;border-radius:6px;overflow:hidden;flex-shrink:0;border:2px solid var(--border-thick);}
+      .recruit-creator-avatar img{width:100%;height:100%;object-fit:cover;}
+      .recruit-creator-avatar .placeholder{width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:var(--surface);font-size:10px;font-weight:700;color:var(--text-muted);}
+      .recruit-card-actions{display:flex;gap:8px;justify-content:flex-end;}
     `;
     document.head.appendChild(s);
   }
@@ -1135,7 +1390,7 @@ function renderRecruitModeContent() {
   const el = document.getElementById('recruitModeContent');
   if (mode === 'match') renderRecruitMatch(el);
   else if (mode === 'recent') renderRecruitRecent(el);
-  else el.innerHTML = '<div class="card"><div class="card-title">车队招募</div><div class="empty"><p>即将推出</p></div></div>';
+  else renderRecruitTeam(el);
 }
 
 function renderRecruitMatch(container) {
