@@ -5,22 +5,7 @@ export async function onRequest(context) {
     return new Response(null, { headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' } });
   }
   const db = env.steam_strangers;
-  await db.exec(`CREATE TABLE IF NOT EXISTS recruiting_posts (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    creator_steamid TEXT NOT NULL DEFAULT '',
-    creator_name TEXT NOT NULL DEFAULT '',
-    creator_avatar TEXT NOT NULL DEFAULT '',
-    game_appid TEXT NOT NULL DEFAULT '',
-    game_name TEXT NOT NULL DEFAULT '',
-    game_img_icon_url TEXT NOT NULL DEFAULT '',
-    description TEXT NOT NULL DEFAULT '',
-    min_hours INTEGER NOT NULL DEFAULT 0,
-    max_members INTEGER NOT NULL DEFAULT 4,
-    member_list TEXT NOT NULL DEFAULT '[]',
-    status INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL DEFAULT '',
-    updated_at TEXT NOT NULL DEFAULT ''
-  )`);
+  await db.exec("CREATE TABLE IF NOT EXISTS recruiting_posts (id INTEGER PRIMARY KEY AUTOINCREMENT, creator_steamid TEXT NOT NULL DEFAULT '', creator_name TEXT NOT NULL DEFAULT '', creator_avatar TEXT NOT NULL DEFAULT '', game_appid TEXT NOT NULL DEFAULT '', game_name TEXT NOT NULL DEFAULT '', game_img_icon_url TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '', min_hours INTEGER NOT NULL DEFAULT 0, max_members INTEGER NOT NULL DEFAULT 4, member_list TEXT NOT NULL DEFAULT '[]', status INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '')");
   const url = new URL(request.url);
   const steamid = url.searchParams.get('steamid');
   if (!steamid) {
