@@ -20,6 +20,7 @@ export async function onRequest(context) {
     created_at TEXT NOT NULL DEFAULT '',
     updated_at TEXT NOT NULL DEFAULT ''
   )`);
+  await db.exec(`ALTER TABLE recruiting_posts ADD COLUMN IF NOT EXISTS team_type TEXT NOT NULL DEFAULT ''`);
   const url = new URL(request.url);
   const steamid = url.searchParams.get('steamid');
   if (!steamid) {

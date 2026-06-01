@@ -20,6 +20,7 @@ export async function onRequest(context) {
     created_at TEXT NOT NULL DEFAULT '',
     updated_at TEXT NOT NULL DEFAULT ''
   )`);
+  await db.exec(`ALTER TABLE recruiting_posts ADD COLUMN IF NOT EXISTS team_type TEXT NOT NULL DEFAULT ''`);
   const url = new URL(request.url);
   const page = parseInt(url.searchParams.get('page')) || 1;
   const limit = Math.min(parseInt(url.searchParams.get('limit')) || 20, 50);

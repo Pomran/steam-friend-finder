@@ -23,6 +23,7 @@ export async function onRequest(context) {
     created_at TEXT NOT NULL DEFAULT '',
     updated_at TEXT NOT NULL DEFAULT ''
   )`);
+  await db.exec(`ALTER TABLE recruiting_posts ADD COLUMN IF NOT EXISTS team_type TEXT NOT NULL DEFAULT ''`);
   let body;
   try { body = await request.json(); } catch {
     return new Response(JSON.stringify({ error: 'Invalid JSON' }), { status: 400, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });

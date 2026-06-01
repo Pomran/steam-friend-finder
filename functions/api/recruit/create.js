@@ -23,11 +23,12 @@ export async function onRequest(context) {
     created_at TEXT NOT NULL DEFAULT '',
     updated_at TEXT NOT NULL DEFAULT ''
   )`);
+  await db.exec(`ALTER TABLE recruiting_posts ADD COLUMN IF NOT EXISTS team_type TEXT NOT NULL DEFAULT ''`);
   let body;
   try { body = await request.json(); } catch {
     return new Response(JSON.stringify({ error: 'Invalid JSON' }), { status: 400, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
   }
-  const { creator_steamid, creator_name, creator_avatar, game_appid, game_name, game_img_icon_url, description, min_hours, max_members } = body;
+  const { creator_steamid, creator_name, creator_avatar, game_appid, game_name, game_img_icon_url, max_members, team_type } = body;
   if (!creator_steamid || !game_appid) {
     return new Response(JSON.stringify({ error: 'Missing creator_steamid or game_appid' }), { status: 400, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
   }
@@ -35,9 +36,9 @@ export async function onRequest(context) {
   const memberList = JSON.stringify([{ steamid: creator_steamid, personaname: creator_name || '', avatar: creator_avatar || '' }]);
   try {
     const { meta } = await db.prepare(
-      `INSERT INTO recruiting_posts (creator_steamid, creator_name, creator_avatar, game_appid, game_name, game_img_icon_url, description, min_hours, max_members, member_list, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
-    ).bind(creator_steamid, creator_name || '', creator_avatar || '', game_appid, game_name || '', game_img_icon_url || '', description || '', min_hours || 0, max_members || 4, memberList, now, now).run();
+      `INSERT INTO recruiting_posts (creator_steamid, creator_name, creator_avatar, game_appid, game_name, game_img_icon_url, max_members, member_list, team_type, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
+    ).bind(creator_steamid, creator_name || '', creator_avatar || '', game_appid, game_name || '', game_img_icon_url || '', max_members || 4, memberList, team_type || '', now, now).run();
     return new Response(JSON.stringify({ success: true, id: meta.last_row_id }), {
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
     });

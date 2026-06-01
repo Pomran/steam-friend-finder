@@ -969,20 +969,16 @@ function renderRecruitTeam(container) {
             ${games.map(g => `<option value="${g.appid}">${g.name}</option>`).join('')}
           </select>
         </label>
-        <label>
-          招募说明
-          <textarea id="recruitTeamDesc" rows="3" placeholder="例：找车队队友，每晚20-23点活动"></textarea>
-        </label>
-        <div style="display:flex;gap:12px;">
-          <label style="flex:1;">
-            最低时长（小时）
-            <input type="number" id="recruitTeamMinHours" value="0" min="0">
-          </label>
+        <div style="display:flex;gap:12px;align-items:flex-end;">
           <label style="flex:1;">
             最大人数
             <select id="recruitTeamMaxMembers">
-              ${[2,3,4,5,6].map(n => `<option value="${n}" ${n===4?'selected':''}>${n}人队</option>`).join('')}
+              ${[2,3,4,5,6,7,8].map(n => `<option value="${n}" ${n===4?'selected':''}>${n}人队</option>`).join('')}
             </select>
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding-bottom:2px;user-select:none;">
+            <input type="checkbox" id="recruitTeamNewTag" style="width:16px;height:16px;accent-color:var(--brand-purple);cursor:pointer;">
+            <span style="font-size:13px;color:var(--text);">标记为「新坑」</span>
           </label>
         </div>
         <button class="btn btn-primary" onclick="createRecruitPost()">发布招募</button>
@@ -1001,10 +997,8 @@ async function createRecruitPost() {
   const appid = parseInt(gameSelect.value);
   const game = state.playerGames.find(g => g.appid === appid);
   if (!game) { showToast('请选择游戏'); return; }
-  const desc = document.getElementById('recruitTeamDesc').value.trim();
-  if (!desc) { showToast('请填写招募说明'); return; }
-  const minHours = parseInt(document.getElementById('recruitTeamMinHours').value) || 0;
   const maxMembers = parseInt(document.getElementById('recruitTeamMaxMembers').value) || 4;
+  const teamType = document.getElementById('recruitTeamNewTag').checked ? 'new' : '';
   try {
     const res = await fetch('/api/recruit/create', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1015,14 +1009,13 @@ async function createRecruitPost() {
         game_appid: appid,
         game_name: game.name,
         game_img_icon_url: game.img_icon_url || '',
-        description: desc,
-        min_hours: minHours,
         max_members: maxMembers,
+        team_type: teamType,
       }),
     });
     if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error || `HTTP ${res.status}`); }
     showToast('招募已发布');
-    document.getElementById('recruitTeamDesc').value = '';
+    document.getElementById('recruitTeamNewTag').checked = false;
     loadRecruitPosts();
     loadMyRecruits();
   } catch (err) {
@@ -1073,10 +1066,9 @@ function renderRecruitCard(post) {
       <div class="recruit-game-icon">${iconUrl ? `<img src="${iconUrl}" alt="">` : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:var(--surface);font-weight:700;font-size:10px;">G</div>`}</div>
       <div class="recruit-game-info">
         <div class="recruit-game-name">${post.game_name}</div>
-        <div class="recruit-meta">${post.min_hours ? `最低 ${post.min_hours}h · ` : ''}${memberCount}/${post.max_members} 人</div>
+        <div class="recruit-meta">${memberCount}/${post.max_members} 人${post.team_type === 'new' ? ' · <span class="stranger-badge" style="font-size:11px;padding:1px 6px;">新坑</span>' : ''}</div>
       </div>
     </div>
-    <div class="recruit-desc">${post.description}</div>
     <div class="recruit-creator">
       <div class="recruit-creator-avatar">${post.creator_avatar ? `<img src="${post.creator_avatar}" alt="">` : `<div class="placeholder">${(post.creator_name||'?')[0]}</div>`}</div>
       <span>${post.creator_name || post.creator_steamid}</span>
@@ -1340,13 +1332,13 @@ function renderRecruit() {
       .recruit-mode-btn.active::before{content:'';position:absolute;left:-1px;top:7px;bottom:7px;width:4px;background:var(--brand-primary);border-radius:0 3px 3px 0;border:2px solid var(--border-thick);border-left:none;}
       .recruit-list{display:flex;flex-direction:column;gap:10px;}
       .recruit-card{background:var(--surface);border:3px solid var(--border-thick);border-radius:16px;padding:16px;}
-      .recruit-card-top{display:flex;gap:12px;align-items:center;margin-bottom:10px;}
+      .recruit-card-top{display:flex;gap:12px;align-items:center;margin-bottom:6px;}
       .recruit-game-icon{width:44px;height:44px;border-radius:10px;overflow:hidden;flex-shrink:0;border:2px solid var(--border-thick);}
       .recruit-game-icon img{width:100%;height:100%;object-fit:cover;}
       .recruit-game-info{flex:1;}
       .recruit-game-name{font-weight:700;font-size:14px;color:var(--text);}
       .recruit-meta{font-size:12px;color:var(--text-dim);font-weight:600;margin-top:2px;}
-      .recruit-desc{font-size:13px;color:var(--text);line-height:1.5;margin-bottom:10px;padding:8px 12px;background:var(--bg);border-radius:8px;}
+
       .recruit-creator{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-dim);font-weight:600;margin-bottom:12px;}
       .recruit-creator-avatar{width:24px;height:24px;border-radius:6px;overflow:hidden;flex-shrink:0;border:2px solid var(--border-thick);}
       .recruit-creator-avatar img{width:100%;height:100%;object-fit:cover;}
