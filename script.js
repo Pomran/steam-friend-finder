@@ -1390,7 +1390,10 @@ function renderRecruitModeContent() {
   const el = document.getElementById('recruitModeContent');
   if (mode === 'match') renderRecruitMatch(el);
   else if (mode === 'recent') renderRecruitRecent(el);
-  else renderRecruitTeam(el);
+  else {
+    try { renderRecruitTeam(el); }
+    catch (e) { console.error('Recruit team error:', e); el.innerHTML = '<div class="card"><div class="empty"><p>车队招募暂时不可用</p></div></div>'; }
+  }
 }
 
 function renderRecruitMatch(container) {
