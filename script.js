@@ -1,4 +1,4 @@
-﻿
+
 const state = {
   playerGames: [],
   rawPlayerGames: [],
@@ -13,6 +13,7 @@ const state = {
   strangersError: null,
   _recruitMode: 'match',
   recentMatchResults: null,
+  gameWeights: {},
 };
 
 const STRANGER_API_BASE = '';
@@ -84,8 +85,42 @@ function mergeCustomGames(games) {
 function remergeCustomGames() {
   state.playerGames = mergeCustomGames(state.rawPlayerGames);
   state.playerTopGames = getTopGames(state.playerGames, TOP_N);
+  cleanupGameWeights();
   renderLibrary();
-  renderMatches();
+  recomputeMatches();
+}
+
+function getGameWeight(appid) {
+  if (state.gameWeights[appid] !== undefined) return state.gameWeights[appid];
+  const rank = state.playerTopGames.findIndex(g => g.appid === appid);
+  return rank >= 0 ? Math.max(TOP_N - rank, 1) : 1;
+}
+
+function setGameWeight(appid, weight) {
+  state.gameWeights[appid] = weight;
+  try { localStorage.setItem('gameWeights', JSON.stringify(state.gameWeights)); } catch {}
+}
+
+function cleanupGameWeights() {
+  const validAppids = new Set(state.playerGames.map(g => g.appid));
+  let changed = false;
+  for (const k in state.gameWeights) {
+    if (!validAppids.has(+k)) {
+      delete state.gameWeights[k];
+      changed = true;
+    }
+  }
+  if (changed) {
+    try { localStorage.setItem('gameWeights', JSON.stringify(state.gameWeights)); } catch {}
+  }
+}
+
+function loadGameWeights() {
+  try { state.gameWeights = JSON.parse(localStorage.getItem('gameWeights') || '{}'); } catch { state.gameWeights = {}; }
+}
+
+function weightLabel(w) {
+  return ['', '无感', '次要', '一般', '重要', '核心'][w] || w;
 }
 
 function showAddGameModal(editAppid) {
@@ -203,6 +238,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Load saved API key
   const saved = localStorage.getItem('steamApiKey');
   if (saved) document.getElementById('apiKey').value = saved;
+  loadGameWeights();
   // event listeners
   document.getElementById('fetchBtn').addEventListener('click', startFetch);
   document.getElementById('apiToggle').addEventListener('click', () => {
@@ -329,6 +365,7 @@ async function startFetch() {
     state.rawPlayerGames = games;
     state.playerGames = mergeCustomGames(games);
     state.playerTopGames = getTopGames(state.playerGames, TOP_N);
+    cleanupGameWeights();
     showProgress('正在获取近期游戏数据...', 30); await yieldToPaint();
     try { state.myRecentGames = await fetchRecentGames(steamId, apiKey); } catch (e) { state.myRecentGames = []; }
     showProgress(`已获取 ${games.length} 款游戏，正在分析好友...`, 40); await yieldToPaint();
@@ -389,8 +426,7 @@ async function fetchFriendMatches(steamId, apiKey) {
     showProgress(`正在分析好友 ${i+1}/${friendIds.length}: ${summaryMap[fid]?.personaname || fid}...`);
     try {
       const fg = await fetchOwnedGames(fid, apiKey);
-      const shared = state.playerGames.filter(pg => fg.some(fg2 => fg2.appid === pg.appid)).length;
-      const score = computeScore(state.playerTopGames, fg, shared, state.playerGames.length, fg.length);
+      const score = computeMatchScore(fg);
       const fTop5 = getTopGames(fg, TOP_N);
       results.push({
         steamid: fid, summary: summaryMap[fid] || null, games: fg, topGames: fTop5, score,
@@ -428,36 +464,76 @@ async function fetchRecentGames(steamId, apiKey) {
   return (d.response && d.response.games) || [];
 }
 
-function computeScore(myTop5, theirGames, sharedCount, myTotal, theirTotal) {
-  if (!myTop5 || !myTop5.length || !theirGames) return 0;
-  const gMap = {}; (theirGames || []).forEach(g => { gMap[g.appid] = g; });
-  let weightedSum = 0, maxWeight = 0, matched = 0;
-  for (let i = 0; i < myTop5.length; i++) {
-    const pg = myTop5[i];
-    const w = TOP_N - i;
-    maxWeight += w;
-    const tg = gMap[pg.appid];
-    if (!tg) continue;
-    matched++;
-    const pT = pg.playtime_forever || 0;
-    const tT = tg.playtime_forever || 0;
-    const logA = Math.log(pT + 1);
-    const logB = Math.log(tT + 1);
-    const sim = logA + logB > 0 ? 1 - Math.abs(logA - logB) / (logA + logB) : 1;
-    weightedSum += w * sim;
+function buildMyVector() {
+  const vec = {};
+  const excluded = getExcludedSet();
+  for (const g of state.playerGames) {
+    if (excluded.has(g.appid)) continue;
+    const pt = g.playtime_forever || 0;
+    if (pt <= 0) continue;
+    vec[g.appid] = getGameWeight(g.appid) * Math.sqrt(pt);
   }
-  const norm = weightedSum / maxWeight;
-  const matchBonus = matched / TOP_N;
-  let sharedRatio = matchBonus;
-  if (sharedCount !== undefined) {
-    if (myTotal !== undefined && theirTotal !== undefined) {
-      const denom = myTotal + theirTotal - sharedCount;
-      sharedRatio = denom > 0 ? sharedCount / denom : 0;
-    } else {
-      sharedRatio = Math.min(sharedCount / 20, 1.0);
+  return vec;
+}
+
+function buildVector(games) {
+  const vec = {};
+  for (const g of games) {
+    const pt = g.playtime_forever || 0;
+    if (pt <= 0) continue;
+    vec[g.appid] = Math.sqrt(pt);
+  }
+  return vec;
+}
+
+function computeSimilarity(myVec, otherVec) {
+  let dot = 0, normAInter = 0, normBInter = 0;
+  let intersectionCount = 0;
+  let normATotal = 0;
+
+  for (const k in myVec) {
+    normATotal += myVec[k] * myVec[k];
+    if (otherVec[k]) {
+      dot += myVec[k] * otherVec[k];
+      normAInter += myVec[k] * myVec[k];
+      normBInter += otherVec[k] * otherVec[k];
+      intersectionCount++;
     }
   }
-  return Math.min((norm * 0.35 + matchBonus * 0.35 + sharedRatio * 0.30) * 1.3, 1.0);
+
+  if (intersectionCount === 0 || normAInter === 0 || normBInter === 0) return 0;
+
+  const alignment = dot / (Math.sqrt(normAInter) * Math.sqrt(normBInter));
+  const coverage = Math.sqrt(normAInter / normATotal);
+
+  return alignment * coverage;
+}
+
+function computeMatchScore(friendGames) {
+  return computeSimilarity(buildMyVector(), buildVector(friendGames));
+}
+
+function recomputeMatches() {
+  for (const f of state.friendsData) {
+    f.score = computeMatchScore(f.games);
+  }
+  state.friendsData.sort((a, b) => b.score - a.score);
+  renderMatches();
+  if (state.strangersData) renderStrangers();
+}
+
+function computeStrangerMatchScore(strangerTopGames) {
+  return computeSimilarity(buildMyVector(), buildVector(strangerTopGames));
+}
+
+function computeRecentMatchScore(myRecent, otherRecent) {
+  const myVec = {};
+  for (const g of myRecent) {
+    const pt = g.playtime_forever || 0;
+    if (pt <= 0) continue;
+    myVec[g.appid] = Math.sqrt(pt);
+  }
+  return computeSimilarity(myVec, buildVector(otherRecent));
 }
 
 function scoreColor(pct) {
@@ -610,14 +686,20 @@ function renderLibrary() {
           <span id="toggleExcludeMode" style="font-size:12px;cursor:pointer;color:var(--text-muted);text-decoration:underline dotted;">排除游戏</span>
         </span>
       </div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;font-weight:600;">拖动滑块调整匹配权重 · 权重越高在匹配中越重要</div>
       ${top5.length ? top5.map((g, i) => {
         const h = Math.round((g.playtime_forever||0)/60);
         const iconUrl = g._custom ? `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${g.appid}/header.jpg` : (g.img_icon_url ? `https://media.steampowered.com/steamcommunity/public/images/apps/${g.appid}/${g.img_icon_url}.jpg` : '');
         const exc = excluded.has(g.appid);
+        const w = getGameWeight(g.appid);
         return `<div class="game-row" style="${exc ? 'opacity:0.4;' : ''}">
           ${iconUrl ? `<div class="game-icon"><img src="${iconUrl}" class="lib-icon" alt=""></div>` : `<div class="game-icon" style="background:var(--surface);display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:12px;font-weight:800;">?</div>`}
           <span style="width:18px;font-size:12px;color:var(--text-muted);font-weight:600;text-align:center;">${i+1}</span>
           <span class="game-name" style="${exc ? 'text-decoration:line-through;' : ''}">${g.name}${customBadge(g)}</span>
+          <div class="weight-control">
+            <input type="range" class="game-weight" min="1" max="5" step="1" value="${w}" data-appid="${g.appid}" title="匹配权重: ${weightLabel(w)}">
+            <span class="weight-label" data-appid="${g.appid}">${weightLabel(w)}</span>
+          </div>
           <span style="color:var(--brand-primary);font-weight:600;font-size:13px;">${h}h</span>
           <span class="exclude-btn" data-appid="${g.appid}" style="margin-left:8px;cursor:pointer;font-size:14px;font-weight:800;color:${exc ? 'var(--text-muted)' : 'var(--text-muted)'};">${exc ? '取消排除' : '排除'}</span>
         </div>`;
@@ -631,9 +713,14 @@ function renderLibrary() {
       </div>
       ${custom.length ? custom.map((g, i) => {
         const h = Math.round(g.playtime_forever / 60);
+        const w = getGameWeight(g.appid);
         return `<div class="game-row" style="background:#f0f7ff;">
           <div class="game-icon"><img src="https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${g.appid}/header.jpg" alt="" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display='none'"></div>
           <span class="game-name">${g.name}</span>
+          <div class="weight-control">
+            <input type="range" class="game-weight" min="1" max="5" step="1" value="${w}" data-appid="${g.appid}" title="匹配权重: ${weightLabel(w)}">
+            <span class="weight-label" data-appid="${g.appid}">${weightLabel(w)}</span>
+          </div>
           <input type="number" class="cg-hours" value="${h}" min="0" step="1" data-cg-appid="${g.appid}" style="width:70px;padding:6px 10px;border:2px solid var(--border-thick);border-radius:8px;font-size:14px;font-weight:700;">
           <span style="font-size:13px;color:var(--text-dim);font-weight:600;">h</span>
           <button class="cg-save" data-cg-appid="${g.appid}" style="padding:6px 12px;background:var(--brand-success);color:#fff;border:2px solid var(--border-thick);border-radius:8px;font-size:12px;font-weight:800;cursor:pointer;">保存</button>
@@ -649,12 +736,23 @@ function renderLibrary() {
   document.querySelectorAll('img.lib-icon').forEach(img => {
     img.addEventListener('error', () => { img.style.display = 'none'; });
   });
+  document.querySelectorAll('.game-weight').forEach(slider => {
+    slider.addEventListener('input', (e) => {
+      const appid = parseInt(e.target.dataset.appid);
+      const weight = parseInt(e.target.value);
+      setGameWeight(appid, weight);
+      const label = document.querySelector(`.weight-label[data-appid="${appid}"]`);
+      if (label) label.textContent = weightLabel(weight);
+      e.target.title = `匹配权重: ${weightLabel(weight)}`;
+      recomputeMatches();
+    });
+  });
   document.querySelectorAll('.exclude-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       toggleExcluded(+btn.dataset.appid);
       state.playerTopGames = getTopGames(state.playerGames, TOP_N);
       renderLibrary();
-      renderMatches();
+      recomputeMatches();
       switchTab('tab-library');
     });
   });
@@ -663,7 +761,7 @@ function renderLibrary() {
       toggleExcluded(+el.dataset.appid);
       state.playerTopGames = getTopGames(state.playerGames, TOP_N);
       renderLibrary();
-      renderMatches();
+      recomputeMatches();
       switchTab('tab-library');
     });
   });
@@ -686,6 +784,8 @@ function renderLibrary() {
       const appid = +btn.dataset.cgAppid;
       if (!confirm('确定删除？')) return;
       saveCustomGames(getCustomGames().filter(c => c.appid !== appid));
+      delete state.gameWeights[appid];
+      try { localStorage.setItem('gameWeights', JSON.stringify(state.gameWeights)); } catch {}
       remergeCustomGames();
       showToast('已删除');
     });
@@ -939,7 +1039,7 @@ function renderStrangersResults() {
     el.innerHTML = `<div class="empty"><p>暂无其他玩家开启陌生人匹配</p></div>`;
   } else {
     const scored = strangers.map(s => {
-      const b = computeStrangerBreakdown(myTop5, s.top5 || [], s.recentTop5);
+      const b = computeStrangerBreakdown(s.top5 || [], s.recentTop5);
       return { ...s, score: b.total, _allTimeScore: b.allTime, _recentScore: b.recent };
     }).sort((a, b) => b.score - a.score);
     const display = scored.slice(0, strangersDisplayCount);
@@ -1454,7 +1554,7 @@ function showStrangerDetail(steamid) {
   const sTop5 = p.top5 || [];
   const sMap = {}; sTop5.forEach(g => { sMap[g.appid] = g; });
   const matchCount = myTop5.filter(g => sMap[g.appid]).length;
-  const b = computeStrangerBreakdown(myTop5, sTop5, p.recentTop5);
+  const b = computeStrangerBreakdown(sTop5, p.recentTop5);
   const myRecentGames = (state.myRecentGames || [])
     .filter(g => (g.playtime_2weeks || 0) > 0)
     .sort((a, b) => (b.playtime_2weeks || 0) - (a.playtime_2weeks || 0))
@@ -1544,8 +1644,8 @@ function showStrangerDetail(steamid) {
   `;
 }
 
-function computeStrangerBreakdown(myTop5, strangerTop5, strangerRecent) {
-  const allTime = computeScore(myTop5, strangerTop5);
+function computeStrangerBreakdown(strangerTop5, strangerRecent) {
+  const allTime = computeStrangerMatchScore(strangerTop5);
   const myRecent = (state.myRecentGames || [])
     .filter(g => (g.playtime_2weeks || 0) > 0)
     .sort((a, b) => (b.playtime_2weeks || 0) - (a.playtime_2weeks || 0))
@@ -1555,12 +1655,8 @@ function computeStrangerBreakdown(myTop5, strangerTop5, strangerRecent) {
     .filter(g => (g.playtime_2weeks || 0) > 0)
     .map(g => ({ ...g, playtime_forever: g.playtime_2weeks }));
   if (!myRecent.length || !sRecent.length) return { total: allTime, allTime, recent: 0 };
-  const recent = computeScore(myRecent, sRecent);
+  const recent = computeRecentMatchScore(myRecent, sRecent);
   return { total: Math.min(allTime * 0.4 + recent * 0.6, 1.0), allTime, recent };
-}
-
-function computeStrangerMatchScore(myTop5, strangerTop5, strangerRecent) {
-  return computeStrangerBreakdown(myTop5, strangerTop5, strangerRecent).total;
 }
 
 let recruitLastPostTime = 0;
@@ -1838,8 +1934,7 @@ async function runRecentMatch(myRecent) {
       try {
         const recent = await fetchRecentGames(f.steamid, state.myApiKey);
         const fRecent = recent.filter(g => (g.playtime_2weeks || 0) > 0).map(g => ({ ...g, playtime_forever: g.playtime_2weeks }));
-        const shared = myRecent.filter(pg => fRecent.some(fg => fg.appid === pg.appid)).length;
-        const score = computeScore(myRecent, fRecent, shared);
+        const score = computeRecentMatchScore(myRecent, fRecent);
         fResults.push({ steamid: f.steamid, name: f.summary?.personaname || f.steamid, avatar: f.summary?.avatarmedium || '', score, games: fRecent, source: '好友' });
       } catch (e) { console.warn(`Recent failed: ${f.steamid}`, e); }
     }
@@ -1853,8 +1948,7 @@ async function runRecentMatch(myRecent) {
       for (const s of state.strangersData) {
         const sRecent = (s.recentTop5 || []).filter(g => (g.playtime_2weeks || 0) > 0).map(g => ({ ...g, playtime_forever: g.playtime_2weeks }));
         if (!sRecent.length) continue;
-        const shared = myRecent.filter(pg => sRecent.some(sg => sg.appid === pg.appid)).length;
-        const score = computeScore(myRecent, sRecent, shared);
+        const score = computeRecentMatchScore(myRecent, sRecent);
         allResults.push({ steamid: s.steamid, name: s.personaname || s.steamid, avatar: s.avatar || '', score, games: sRecent, source: '游戏搭子' });
       }
     }

@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>算法单元测试</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'SF Mono', 'Consolas', monospace; background: #0f172a; color: #e2e8f0; padding: 24px; }
+  h1 { font-size: 24px; font-weight: 900; margin-bottom: 8px; color: #fbc531; }
+  h2 { font-size: 16px; font-weight: 700; margin: 20px 0 8px; color: #94a3b8; border-bottom: 1px solid #334155; padding-bottom: 4px; }
+  .summary { font-size: 14px; margin-bottom: 16px; color: #94a3b8; }
+  .summary b { color: #10b981; }
+  .summary .fail-count { color: #ff5e62; }
+  .test { padding: 10px 14px; margin: 4px 0; border-radius: 8px; font-size: 13px; line-height: 1.6; }
+  .pass { background: #064e3b; border-left: 4px solid #10b981; }
+  .fail { background: #4c0519; border-left: 4px solid #ff5e62; }
+  .test-name { font-weight: 700; }
+  .test-detail { color: #94a3b8; margin-top: 4px; }
+  .test-detail code { background: #1e293b; padding: 1px 6px; border-radius: 4px; color: #fbc531; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 800; margin-left: 8px; }
+  .badge-pass { background: #10b981; color: #fff; }
+  .badge-fail { background: #ff5e62; color: #fff; }
+</style>
+</head>
+<body>
+<h1>Steam 玩伴探测 · 算法单元测试</h1>
+<div class="summary" id="summary"></div>
+<div id="results"></div>
+<script>
+const TOP_N = 5;
+
+const state = {
+  playerGames: [],
+  rawPlayerGames: [],
+  playerTopGames: [],
+  friendsData: [],
+  mySteamId: null,
+  myApiKey: null,
+  myProfile: null,
+  strangersData: null,
+  strangersError: null,
+  gameWeights: {},
+};
+
+let excludedSet = new Set();
+
+function getExcludedSet() { return excludedSet; }
+function getGameWeight(appid) {
+  if (state.gameWeights[appid] !== undefined) return state.gameWeights[appid];
+  const rank = state.playerTopGames.findIndex(g => g.appid === appid);
+  return rank >= 0 ? Math.max(TOP_N - rank, 1) : 1;
+}
+function setGameWeight(appid, weight) { state.gameWeights[appid] = weight; }
+function weightLabel(w) { return ['', '无感', '次要', '一般', '重要', '核心'][w] || w; }
+
+function getTopGames(games, n = TOP_N) {
+  const excluded = getExcludedSet();
+  return [...games].filter(g => (g.playtime_forever || 0) > 0 && !excluded.has(g.appid))
+    .sort((a, b) => (b.playtime_forever || 0) - (a.playtime_forever || 0))
+    .slice(0, n);
+}
+
+function buildMyVector() {
+  const vec = {};
+  const excluded = getExcludedSet();
+  for (const g of state.playerGames) {
+    if (excluded.has(g.appid)) continue;
+    const pt = g.playtime_forever || 0;
+    if (pt <= 0) continue;
+    vec[g.appid] = getGameWeight(g.appid) * Math.sqrt(pt);
+  }
+  return vec;
+}
+
+function buildVector(games) {
+  const vec = {};
+  for (const g of games) {
+    const pt = g.playtime_forever || 0;
+    if (pt <= 0) continue;
+    vec[g.appid] = Math.sqrt(pt);
+  }
+  return vec;
+}
+
+function computeSimilarity(myVec, otherVec) {
+  let dot = 0, normAInter = 0, normBInter = 0;
+  let intersectionCount = 0;
+  let normATotal = 0;
+
+  for (const k in myVec) {
+    normATotal += myVec[k] * myVec[k];
+    if (otherVec[k]) {
+      dot += myVec[k] * otherVec[k];
+      normAInter += myVec[k] * myVec[k];
+      normBInter += otherVec[k] * otherVec[k];
+      intersectionCount++;
+    }
+  }
+
+  if (intersectionCount === 0 || normAInter === 0 || normBInter === 0) return 0;
+
+  const alignment = dot / (Math.sqrt(normAInter) * Math.sqrt(normBInter));
+  const coverage = Math.sqrt(normAInter / normATotal);
+
+  return alignment * coverage;
+}
+
+function computeMatchScore(friendGames) {
+  return computeSimilarity(buildMyVector(), buildVector(friendGames));
+}
+
+function computeStrangerMatchScore(strangerTopGames) {
+  return computeSimilarity(buildMyVector(), buildVector(strangerTopGames));
+}
+
+function resetState() {
+  state.playerGames = [];
+  state.rawPlayerGames = [];
+  state.playerTopGames = [];
+  state.gameWeights = {};
+  excludedSet = new Set();
+}
+
+function setupMyGames(games, weights) {
+  state.playerGames = games;
+  state.rawPlayerGames = games;
+  state.playerTopGames = getTopGames(games, TOP_N);
+  state.gameWeights = weights || {};
+}
+
+function makeGame(appid, playtimeMin) {
+  return { appid, name: `Game ${appid}`, playtime_forever: playtimeMin, img_icon_url: '' };
+}
+
+function assertClose(actual, expected, tolerance = 0.01) {
+  return Math.abs(actual - expected) <= tolerance;
+}
+
+const tests = [];
+let passed = 0;
+let failed = 0;
+
+function test(name, fn) {
+  tests.push({ name, fn });
+}
+
+function run() {
+  const container = document.getElementById('results');
+  let html = '';
+
+  for (const t of tests) {
+    resetState();
+    try {
+      t.fn();
+      passed++;
+      html += `<div class="test pass"><span class="test-name">${t.name}</span><span class="badge badge-pass">PASS</span></div>`;
+    } catch (e) {
+      failed++;
+      html += `<div class="test fail"><span class="test-name">${t.name}</span><span class="badge badge-fail">FAIL</span><div class="test-detail">${e.message}</div></div>`;
+    }
+  }
+
+  document.getElementById('summary').innerHTML = `共 <b>${tests.length}</b> 个测试 · <b class="${failed ? 'fail-count' : ''}">${passed}</b> 通过 · <b class="fail-count">${failed}</b> 失败`;
+  container.innerHTML = html;
+}
+
+function expect(actual, expected, label, tolerance = 0.01) {
+  if (!assertClose(actual, expected, tolerance)) {
+    throw new Error(`${label || ''} 期望 <code>${expected.toFixed(4)}</code> 实际 <code>${actual.toFixed(4)}</code> (容差 ${tolerance})`);
+  }
+}
+
+// ============================================================
+// T01: 完全无重叠 → score = 0
+// ============================================================
+test('T01: 完全无重叠 → score = 0', () => {
+  setupMyGames([makeGame(1, 6000), makeGame(2, 3000), makeGame(3, 1500)]);
+  const friendGames = [makeGame(100, 6000), makeGame(200, 3000), makeGame(300, 1500)];
+  const score = computeMatchScore(friendGames);
+  expect(score, 0, 'score');
+});
+
+// ============================================================
+// T02: 完全重叠 + 相同时长 → score = 1
+// ============================================================
+test('T02: 完全重叠+相同时长+相同权重 → score = 1', () => {
+  setupMyGames([makeGame(1, 6000), makeGame(2, 3000), makeGame(3, 1500)], { 1: 1, 2: 1, 3: 1 });
+  const friendGames = [makeGame(1, 6000), makeGame(2, 3000), makeGame(3, 1500)];
+  const score = computeMatchScore(friendGames);
+  expect(score, 1.0, 'score');
+});
+
+// ============================================================
+// T03: 完全重叠 + 不同时长 → alignment < 1, coverage = 1
+// ============================================================
+test('T03: 完全重叠 + 不同时长 → score < 1', () => {
+  setupMyGames([makeGame(1, 6000), makeGame(2, 3000)]);
+  const friendGames = [makeGame(1, 12000), makeGame(2, 60)];
+  const score = computeMatchScore(friendGames);
+  if (score >= 1.0) throw new Error(`score 应 < 1.0，实际 ${score.toFixed(4)}`);
+  if (score <= 0) throw new Error(`score 应 > 0，实际 ${score.toFixed(4)}`);
+});
+
+// ============================================================
+// T04: 部分重叠 → alignment 和 coverage 都 < 1
+// ============================================================
+test('T04: 部分重叠 → 0 < score < 1', () => {
+  setupMyGames([makeGame(1, 6000), makeGame(2, 3000), makeGame(3, 1500)]);
+  const friendGames = [makeGame(1, 6000), makeGame(2, 3000), makeGame(999, 5000)];
+  const score = computeMatchScore(friendGames);
+  if (score <= 0 || score >= 1) throw new Error(`score 应在 (0,1)，实际 ${score.toFixed(4)}`);
+});
+
+// ============================================================
+// T05: 稀疏向量 — 陌生人只有 5 款游戏，恰好全是我的核心游戏
+// ============================================================
+test('T05: 陌生人 Top5 恰好全是我的核心游戏 → 高分', () => {
+  const myGames = [];
+  for (let i = 1; i <= 200; i++) myGames.push(makeGame(i, Math.max(6000 - i * 25, 60)));
+  setupMyGames(myGames);
+  const strangerTop5 = [makeGame(1, 6000), makeGame(2, 5800), makeGame(3, 5600), makeGame(4, 5400), makeGame(5, 5200)];
+  const score = computeStrangerMatchScore(strangerTop5);
+  if (score < 0.3) throw new Error(`陌生人匹配核心游戏应得较高分，实际 ${score.toFixed(4)}`);
+});
+
+// ============================================================
+// T06: 稀疏向量 — 陌生人只有 5 款边缘游戏
+// ============================================================
+test('T06: 陌生人 Top5 全是边缘游戏 → 低分', () => {
+  const myGames = [];
+  for (let i = 1; i <= 200; i++) myGames.push(makeGame(i, Math.max(6000 - i * 25, 60)));
+  setupMyGames(myGames);
+  const strangerTop5 = [makeGame(190, 200), makeGame(191, 180), makeGame(192, 160), makeGame(193, 140), makeGame(194, 120)];
+  const score = computeStrangerMatchScore(strangerTop5);
+  if (score > 0.15) throw new Error(`陌生人匹配边缘游戏应得低分，实际 ${score.toFixed(4)}`);
+});
+
+// ============================================================
+// T07: 权重影响 — 核心权重 vs 无感权重
+// ============================================================
+test('T07: 高权重游戏匹配 → 分数高于低权重游戏匹配', () => {
+  setupMyGames([makeGame(1, 6000), makeGame(2, 3000), makeGame(3, 1500), makeGame(4, 800), makeGame(5, 400)]);
+  state.gameWeights = { 1: 5, 2: 1, 3: 1, 4: 1, 5: 1 };
+
+  const friendMatchCore = computeMatchScore([makeGame(1, 6000)]);
+  state.gameWeights = { 1: 1, 2: 5, 3: 1, 4: 1, 5: 1 };
+  const friendMatchSecondary = computeMatchScore([makeGame(2, 3000)]);
+
+  if (friendMatchCore <= friendMatchSecondary) {
+    throw new Error(`核心权重匹配 (${friendMatchCore.toFixed(4)}) 应 > 次要权重匹配 (${friendMatchSecondary.toFixed(4)})`);
+  }
+});
+
+// ============================================================
+// T08: 权重=1（无感）时，该游戏对匹配影响极小
+// ============================================================
+test('T08: 权重=1（无感）游戏匹配 → 分数低于权重=5（核心）', () => {
+  setupMyGames([makeGame(1, 6000), makeGame(2, 3000), makeGame(3, 1500), makeGame(4, 800), makeGame(5, 400)]);
+  state.gameWeights = { 1: 1, 2: 1, 3: 1, 4: 1, 5: 5 };
+
+  const scoreMatchLow = computeMatchScore([makeGame(1, 6000)]);
+  const scoreMatchHigh = computeMatchScore([makeGame(5, 400)]);
+
+  if (scoreMatchHigh <= scoreMatchLow) {
+    throw new Error(`核心权重5 (${scoreMatchHigh.toFixed(4)}) 应 > 无感权重1 (${scoreMatchLow.toFixed(4)})`);
+  }
+});
+
+// ============================================================
+// T09: 排除游戏 → 被排除的游戏不参与匹配
+// ============================================================
+test('T09: 排除游戏后 → 该游戏不影响匹配', () => {
+  setupMyGames([makeGame(1, 6000), makeGame(2, 3000), makeGame(3, 1500)]);
+  excludedSet = new Set([1]);
+  const score = computeMatchScore([makeGame(1, 6000), makeGame(2, 3000), makeGame(3, 1500)]);
+  if (score >= 1.0) throw new Error(`排除核心游戏后 score 应 < 1.0，实际 ${score.toFixed(4)}`);
+});
+
+// ============================================================
+// T10: 空游戏库 → score = 0
+// ============================================================
+test('T10: 空游戏库 → score = 0', () => {
+  setupMyGames([]);
+  const score = computeMatchScore([makeGame(1, 6000)]);
+  expect(score, 0, 'score');
+});
+
+// ============================================================
+// T11: 对方空游戏库 → score = 0
+// ============================================================
+test('T11: 对方空游戏库 → score = 0', () => {
+  setupMyGames([makeGame(1, 6000), makeGame(2, 3000)]);
+  const score = computeMatchScore([]);
+  expect(score, 0, 'score');
+});
+
+// ============================================================
+// T12: 单款游戏重叠 → alignment = 1, coverage < 1
+// ============================================================
+test('T12: 单款游戏重叠 → 0 < score < 1', () => {
+  setupMyGames([makeGame(1, 6000), makeGame(2, 3000), makeGame(3, 1500)]);
+  const score = computeMatchScore([makeGame(1, 6000), makeGame(99, 5000), makeGame(98, 4000)]);
+  if (score <= 0 || score >= 1) throw new Error(`score 应在 (0,1)，实际 ${score.toFixed(4)}`);
+});
+
+// ============================================================
+// T13: 对称性 — computeSimilarity 不对称（coverage 是单向的）
+// ============================================================
+test('T13: computeSimilarity 非对称 — coverage 是"我的"覆盖度', () => {
+  setupMyGames([makeGame(1, 6000), makeGame(2, 3000), makeGame(3, 1500)]);
+  const friendGames = [makeGame(1, 6000)];
+
+  const scoreA = computeMatchScore(friendGames);
+
+  resetState();
+  setupMyGames([makeGame(1, 6000)]);
+  const friendGamesB = [makeGame(1, 6000), makeGame(2, 3000), makeGame(3, 1500)];
+  const scoreB = computeMatchScore(friendGamesB);
+
+  if (scoreA === scoreB) throw new Error(`非对称算法中两个方向分数应不同: A=${scoreA.toFixed(4)} B=${scoreB.toFixed(4)}`);
+});
+
+// ============================================================
+// T14: 时长为 0 的游戏不参与计算
+// ============================================================
+test('T14: playtime=0 的游戏不参与计算', () => {
+  setupMyGames([makeGame(1, 6000), makeGame(2, 0), makeGame(3, 0)]);
+  const score = computeMatchScore([makeGame(1, 6000)]);
+  expect(score, 1.0, 'score');
+});
+
+// ============================================================
+// T15: 相同游戏不同时长 → 时长越接近 alignment 越高
+// ============================================================
+test('T15: 多款游戏时长比例越接近 → alignment越高', () => {
+  setupMyGames([makeGame(1, 6000), makeGame(2, 3000)], { 1: 1, 2: 1 });
+  const scoreClose = computeMatchScore([makeGame(1, 6000), makeGame(2, 3000)]);
+  const scoreFar = computeMatchScore([makeGame(1, 3000), makeGame(2, 6000)]);
+  if (scoreClose <= scoreFar) {
+    throw new Error(`时长比例一致 (${scoreClose.toFixed(4)}) 应 > 时长比例反转 (${scoreFar.toFixed(4)})`);
+  }
+});
+
+// ============================================================
+// T16: coverage 精确计算 — 3 款重叠 2 款
+// ============================================================
+test('T16: coverage 精确值 — 3 款游戏重叠 2 款', () => {
+  setupMyGames([makeGame(1, 6000), makeGame(2, 3000), makeGame(3, 1500)]);
+  const friendGames = [makeGame(1, 6000), makeGame(2, 3000), makeGame(99, 9999)];
+
+  const myVec = buildMyVector();
+  const friendVec = buildVector(friendGames);
+  const score = computeSimilarity(myVec, friendVec);
+
+  const w1 = getGameWeight(1), w2 = getGameWeight(2), w3 = getGameWeight(3);
+  const normATotal = (w1*w1*6000) + (w2*w2*3000) + (w3*w3*1500);
+  const normAInter = (w1*w1*6000) + (w2*w2*3000);
+  const expectedCoverage = Math.sqrt(normAInter / normATotal);
+
+  const normBInter = 6000 + 3000;
+  const dot = w1 * Math.sqrt(6000) * Math.sqrt(6000) + w2 * Math.sqrt(3000) * Math.sqrt(3000);
+  const expectedAlignment = dot / (Math.sqrt(normAInter) * Math.sqrt(normBInter));
+  const expectedScore = expectedAlignment * expectedCoverage;
+
+  expect(score, expectedScore, 'score', 0.001);
+});
+
+// ============================================================
+// T17: 默认权重 — 按 Top N 排名自动分配
+// ============================================================
+test('T17: 默认权重按排名分配 → 第1名=5, 第2名=4, ...', () => {
+  setupMyGames([makeGame(1, 6000), makeGame(2, 3000), makeGame(3, 1500), makeGame(4, 800), makeGame(5, 400)]);
+  expect(getGameWeight(1), 5, 'rank 1 weight');
+  expect(getGameWeight(2), 4, 'rank 2 weight');
+  expect(getGameWeight(3), 3, 'rank 3 weight');
+  expect(getGameWeight(4), 2, 'rank 4 weight');
+  expect(getGameWeight(5), 1, 'rank 5 weight');
+});
+
+// ============================================================
+// T18: 自定义权重覆盖默认值
+// ============================================================
+test('T18: 自定义权重覆盖默认值', () => {
+  setupMyGames([makeGame(1, 6000), makeGame(2, 3000)], { 1: 1, 2: 5 });
+  expect(getGameWeight(1), 1, 'custom weight for appid 1');
+  expect(getGameWeight(2), 5, 'custom weight for appid 2');
+});
+
+// ============================================================
+// T19: weightLabel 映射
+// ============================================================
+test('T19: weightLabel 正确映射', () => {
+  expect(weightLabel(1), '无感', 'w=1', 0);
+  expect(weightLabel(2), '次要', 'w=2', 0);
+  expect(weightLabel(3), '一般', 'w=3', 0);
+  expect(weightLabel(4), '重要', 'w=4', 0);
+  expect(weightLabel(5), '核心', 'w=5', 0);
+});
+
+// ============================================================
+// T20: 大量游戏 + 陌生人仅 5 款 → 核心游戏高分 vs 边缘游戏低分
+// ============================================================
+test('T20: 200 款游戏场景 — 核心5款匹配 vs 边缘5款匹配', () => {
+  const myGames = [];
+  for (let i = 1; i <= 200; i++) myGames.push(makeGame(i, Math.max(6000 - i * 25, 60)));
+  setupMyGames(myGames);
+
+  const coreStranger = [makeGame(1, 6000), makeGame(2, 5800), makeGame(3, 5600), makeGame(4, 5400), makeGame(5, 5200)];
+  const edgeStranger = [makeGame(196, 100), makeGame(197, 90), makeGame(198, 80), makeGame(199, 70), makeGame(200, 60)];
+
+  const coreScore = computeStrangerMatchScore(coreStranger);
+  const edgeScore = computeStrangerMatchScore(edgeStranger);
+
+  if (coreScore <= edgeScore) {
+    throw new Error(`核心匹配 (${coreScore.toFixed(4)}) 应 > 边缘匹配 (${edgeScore.toFixed(4)})`);
+  }
+  if (coreScore < 0.2) {
+    throw new Error(`核心匹配分数不应太低: ${coreScore.toFixed(4)}`);
+  }
+});
+
+// ============================================================
+// T21: √playtime 压缩效果 — 2000h vs 2h 不再是 1000:1
+// ============================================================
+test('T21: √playtime 压缩极端时长差异', () => {
+  setupMyGames([makeGame(1, 120000), makeGame(2, 120)]);
+  const vec = buildMyVector();
+  const ratio = vec[1] / vec[2];
+  const rawRatio = 120000 / 120;
+  if (ratio >= rawRatio) {
+    throw new Error(`√playtime 应压缩比值: 压缩后 ${ratio.toFixed(2)} 应 < 原始 ${rawRatio.toFixed(2)}`);
+  }
+});
+
+// ============================================================
+// T22: 好友完整游戏库 vs 陌生人 Top5 — 好友分数应更高
+// ============================================================
+test('T22: 好友完整库 vs 陌生人 Top5 — 好友覆盖度更高', () => {
+  const myGames = [];
+  for (let i = 1; i <= 50; i++) myGames.push(makeGame(i, 6000 - i * 80));
+  setupMyGames(myGames);
+
+  const friendFull = myGames.map(g => ({ ...g, playtime_forever: g.playtime_forever * 0.8 }));
+  const strangerTop5 = friendFull.slice(0, 5);
+
+  const friendScore = computeMatchScore(friendFull);
+  const strangerScore = computeStrangerMatchScore(strangerTop5);
+
+  if (friendScore <= strangerScore) {
+    throw new Error(`好友完整库 (${friendScore.toFixed(4)}) 应 > 陌生人Top5 (${strangerScore.toFixed(4)})`);
+  }
+});
+
+run();
+</script>
+</body>
+</html>

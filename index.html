@@ -668,6 +668,58 @@ body {
   .game-name { font-size: 13px; }
   .stat-value { font-size: 26px; }
   .footer { font-size: 11px; }
+  .weight-control { display: none; }
+  .weight-control + span { margin-left: auto; }
+}
+.weight-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.game-weight {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 72px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface);
+  border: 2px solid var(--border-thick);
+  outline: none;
+  cursor: pointer;
+}
+.game-weight::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--brand-primary);
+  border: 2px solid var(--border-thick);
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+.game-weight::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+.game-weight::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--brand-primary);
+  border: 2px solid var(--border-thick);
+  cursor: pointer;
+}
+.weight-label {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--brand-primary);
+  min-width: 28px;
+  text-align: center;
+  padding: 2px 5px;
+  background: var(--surface);
+  border-radius: 6px;
+  border: 1.5px solid var(--border-thick);
 }
 </style>
 </head>
