@@ -5,5 +5,8 @@
   },
   "devDependencies": {
     "wrangler": "^4.86.0"
+  },
+  "dependencies": {
+    "acorn": "^8.16.0"
   }
 }
