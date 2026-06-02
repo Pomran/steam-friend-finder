@@ -390,7 +390,7 @@ async function fetchFriendMatches(steamId, apiKey) {
     try {
       const fg = await fetchOwnedGames(fid, apiKey);
       const shared = state.playerGames.filter(pg => fg.some(fg2 => fg2.appid === pg.appid)).length;
-      const score = computeMatchScore(state.playerTopGames, fg, shared);
+      const score = computeScore(state.playerTopGames, fg, shared, state.playerGames.length, fg.length);
       const fTop5 = getTopGames(fg, TOP_N);
       results.push({
         steamid: fid, summary: summaryMap[fid] || null, games: fg, topGames: fTop5, score,
@@ -428,28 +428,36 @@ async function fetchRecentGames(steamId, apiKey) {
   return (d.response && d.response.games) || [];
 }
 
-function computeMatchScore(playerTop5, friendGames, sharedCount) {
-  if (!playerTop5 || !playerTop5.length || !friendGames) return 0;
-  const fMap = {}; friendGames.forEach(g => { fMap[g.appid] = g; });
-  let weightedSum = 0;
-  let maxWeight = 0;
-  let matched = 0;
-  for (let i = 0; i < playerTop5.length; i++) {
-    const pg = playerTop5[i];
+function computeScore(myTop5, theirGames, sharedCount, myTotal, theirTotal) {
+  if (!myTop5 || !myTop5.length || !theirGames) return 0;
+  const gMap = {}; (theirGames || []).forEach(g => { gMap[g.appid] = g; });
+  let weightedSum = 0, maxWeight = 0, matched = 0;
+  for (let i = 0; i < myTop5.length; i++) {
+    const pg = myTop5[i];
     const w = TOP_N - i;
     maxWeight += w;
-    const fg = fMap[pg.appid];
-    if (!fg) continue;
+    const tg = gMap[pg.appid];
+    if (!tg) continue;
     matched++;
     const pT = pg.playtime_forever || 0;
-    const fT = fg.playtime_forever || 0;
-    const sim = 1 - Math.abs(pT - fT) / (pT + fT + 1);
+    const tT = tg.playtime_forever || 0;
+    const logA = Math.log(pT + 1);
+    const logB = Math.log(tT + 1);
+    const sim = logA + logB > 0 ? 1 - Math.abs(logA - logB) / (logA + logB) : 1;
     weightedSum += w * sim;
   }
   const norm = weightedSum / maxWeight;
   const matchBonus = matched / TOP_N;
-  const sharedRatio = Math.min((sharedCount || 0) / 20, 1.0);
-  return Math.min((norm * 0.5 + matchBonus * 0.3 + sharedRatio * 0.2) * 1.3, 1.0);
+  let sharedRatio = matchBonus;
+  if (sharedCount !== undefined) {
+    if (myTotal !== undefined && theirTotal !== undefined) {
+      const denom = myTotal + theirTotal - sharedCount;
+      sharedRatio = denom > 0 ? sharedCount / denom : 0;
+    } else {
+      sharedRatio = Math.min(sharedCount / 20, 1.0);
+    }
+  }
+  return Math.min((norm * 0.35 + matchBonus * 0.35 + sharedRatio * 0.30) * 1.3, 1.0);
 }
 
 function scoreColor(pct) {
@@ -761,8 +769,7 @@ function showPersonDetail(steamid) {
         <h2>${name}</h2>
         <div class="match-badge">${pct}% 匹配 · Top5 重合 ${matchCount}/${TOP_N}</div>
       </div>
-      <button class="btn btn-share" id="shareDetailBtn" style="font-size:13px;padding:8px 16px;">分享</button>
-      <button class="btn btn-ghost" id="backBtn">← 返回</button>
+      <div style="display:flex;gap:8px;justify-content:center;width:100%;"><button class="btn btn-share" id="shareDetailBtn" style="font-size:13px;padding:8px 16px;flex:1;">分享</button><button class="btn btn-ghost" id="backBtn" style="flex:1;">← 返回</button></div>
     </div>
     <div class="detail-body">
       <div class="card">
@@ -931,10 +938,10 @@ function renderStrangersResults() {
   } else if (!strangers || !strangers.length) {
     el.innerHTML = `<div class="empty"><p>暂无其他玩家开启陌生人匹配</p></div>`;
   } else {
-    const scored = strangers.map(s => ({
-      ...s,
-      score: computeStrangerMatchScore(myTop5, s.top5 || []),
-    })).sort((a, b) => b.score - a.score);
+    const scored = strangers.map(s => {
+      const b = computeStrangerBreakdown(myTop5, s.top5 || [], s.recentTop5);
+      return { ...s, score: b.total, _allTimeScore: b.allTime, _recentScore: b.recent };
+    }).sort((a, b) => b.score - a.score);
     const display = scored.slice(0, strangersDisplayCount);
     const hasMore = scored.length > strangersDisplayCount;
     el.innerHTML = `
@@ -992,33 +999,33 @@ function renderRecruitTeam(container) {
       <div class="custom-form">
         <label>
           选择游戏
-          <select id="recruitTeamGameSelect">
-            <option value="">-- 选择游戏 --</option>
-            ${games.map(g => `<option value="${g.appid}">${g.name}</option>`).join('')}
-            <option value="__custom__">手动输入游戏...</option>
-          </select>
-        </label>
-        <div id="recruitTeamCustomGame" style="display:none;">
-          <label style="margin-top:8px;">
-            游戏 AppID
-            <input type="number" id="recruitTeamCustomAppid" placeholder="如 578080">
-          </label>
-          <label>
-            游戏名称
-            <input type="text" id="recruitTeamCustomName" placeholder="如 PUBG: BATTLEGROUNDS">
-          </label>
+           <select id="recruitTeamGameSelect">
+             <option value="">-- 选择游戏 --</option>
+             <option value="__custom__">手动输入游戏...</option>
+             ${games.map(g => `<option value="${g.appid}">${g.name}</option>`).join('')}
+           </select>
+         </label>
+         <div id="recruitTeamCustomGame" style="display:none;">
+           <label style="font-size:13px;font-weight:900;color:var(--border-thick);display:flex;flex-direction:column;gap:6px;">
+             Steam 商店 URL 或 AppID
+             <input type="text" id="recruitTeamCustomAppid" placeholder="例: 730 或 store.steampowered.com/app/730" style="padding:14px 18px;border:3px solid var(--border-thick);border-radius:14px;font-size:15px;font-weight:700;">
+           </label>
+           <div id="recruitTeamCustomPreview" style="display:none;align-items:center;gap:14px;padding:12px;background:var(--surface);border-radius:14px;border:2px solid var(--border-thick);margin-top:8px;">
+             <img src="" alt="" style="width:60px;height:28px;border-radius:6px;border:2px solid var(--border-thick);object-fit:cover;" onerror="this.style.display='none'">
+             <span id="recruitTeamCustomName" style="font-weight:800;font-size:15px;"></span>
+           </div>
         </div>
         <label>
-          目标
-          <div style="display:flex;gap:6px;flex-wrap:wrap;">
-            ${['娱乐','冲分','日常'].map(t => `<label class="pill-option" style="display:flex;align-items:center;gap:4px;cursor:pointer;padding:4px 10px;border:2px solid var(--border-thick);border-radius:8px;background:var(--surface);font-size:12px;font-weight:600;"><input type="radio" name="recruitGoal" value="${t}" style="accent-color:var(--brand-purple);margin:0;">${t}</label>`).join('')}
-          </div>
-        </label>
-        <label>
-          在线时段
-          <div style="display:flex;gap:6px;flex-wrap:wrap;">
-            ${['早上','下午','晚上','深夜'].map(t => `<label class="pill-option" style="display:flex;align-items:center;gap:4px;cursor:pointer;padding:4px 10px;border:2px solid var(--border-thick);border-radius:8px;background:var(--surface);font-size:12px;font-weight:600;"><input type="radio" name="recruitTime" value="${t}" style="accent-color:var(--brand-purple);margin:0;">${t}</label>`).join('')}
-          </div>
+目标
+           <div style="display:flex;gap:6px;flex-wrap:wrap;">
+             ${['娱乐','冲分','日常'].map(t => `<div class="pill-option" data-group="recruitGoal" data-value="${t}" onclick="togglePill(this)">${t}</div>`).join('')}
+           </div>
+         </label>
+         <label>
+           在线时段
+           <div style="display:flex;gap:6px;flex-wrap:wrap;">
+             ${['早上','下午','晚上','深夜'].map(t => `<div class="pill-option" data-group="recruitTime" data-value="${t}" onclick="togglePill(this)">${t}</div>`).join('')}
+           </div>
         </label>
         <div style="display:flex;gap:12px;align-items:flex-end;">
           <label style="flex:1;">
@@ -1042,12 +1049,35 @@ function renderRecruitTeam(container) {
   sel.addEventListener('change', () => {
     document.getElementById('recruitTeamCustomGame').style.display = sel.value === '__custom__' ? 'block' : 'none';
   });
+  let recruitLookupTimer;
+  const customAppidInput = document.getElementById('recruitTeamCustomAppid');
+  customAppidInput.addEventListener('input', () => {
+    clearTimeout(recruitLookupTimer);
+    recruitLookupTimer = setTimeout(async () => {
+      const appid = extractAppid(customAppidInput.value);
+      if (!appid) return;
+      const info = await lookupGameInfo(appid);
+      if (!info) return;
+      const preview = document.getElementById('recruitTeamCustomPreview');
+      preview.style.display = 'flex';
+      document.getElementById('recruitTeamCustomName').textContent = info.name;
+      const previewImg = preview.querySelector('img');
+      if (previewImg) {
+        previewImg.src = `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${appid}/header.jpg`;
+        previewImg.style.display = '';
+      }
+      customAppidInput.dataset.lookedUpAppid = appid;
+      customAppidInput.dataset.lookedUpName = info.name;
+    }, 500);
+  });
   loadRecruitPosts(true);
   loadMyRecruits();
 }
 
 async function createRecruitPost() {
   if (!state.mySteamId || !state.myProfile) { showToast('请先完成扫描'); return; }
+  const now = Date.now();
+  if (now - recruitLastPostTime < 30000) { showToast(`请 ${Math.ceil((30000 - (now - recruitLastPostTime))/1000)} 秒后再发布`); return; }
   const btn = document.getElementById('recruitSubmitBtn');
   if (btn.disabled) return;
   btn.disabled = true; btn.textContent = '发布中...';
@@ -1055,9 +1085,17 @@ async function createRecruitPost() {
   const rawVal = gameSelect.value;
   let appid, gameName, gameIcon = '';
   if (rawVal === '__custom__') {
-    appid = parseInt(document.getElementById('recruitTeamCustomAppid').value.trim());
-    gameName = document.getElementById('recruitTeamCustomName').value.trim();
-    if (!appid || !gameName) { showToast('请填写游戏的 AppID 和名称'); btn.disabled = false; btn.textContent = '发布招募'; return; }
+    const input = document.getElementById('recruitTeamCustomAppid');
+    const extracted = extractAppid(input.value);
+    if (!extracted) { showToast('请输入有效的 AppID 或商店 URL'); btn.disabled = false; btn.textContent = '发布招募'; return; }
+    appid = +extracted;
+    if (input.dataset.lookedUpAppid == appid) {
+      gameName = input.dataset.lookedUpName;
+    } else {
+      const info = await lookupGameInfo(appid);
+      if (!info) { showToast('未找到该游戏，请检查 AppID'); btn.disabled = false; btn.textContent = '发布招募'; return; }
+      gameName = info.name;
+    }
   } else {
     appid = parseInt(rawVal);
     const game = state.playerGames.find(g => g.appid === appid);
@@ -1067,15 +1105,16 @@ async function createRecruitPost() {
   }
   const maxMembers = parseInt(document.getElementById('recruitTeamMaxMembers').value) || 4;
   const teamType = document.getElementById('recruitTeamNewTag').checked ? 'new' : '';
-  const goalEl = document.querySelector('input[name="recruitGoal"]:checked');
-  const timeEl = document.querySelector('input[name="recruitTime"]:checked');
-  const goalType = goalEl ? goalEl.value : '';
-  const playTime = timeEl ? timeEl.value : '';
+  const goalEl = document.querySelector('.pill-option.active[data-group="recruitGoal"]');
+  const timeEl = document.querySelector('.pill-option.active[data-group="recruitTime"]');
+  const goalType = goalEl ? goalEl.dataset.value : '';
+  const playTime = timeEl ? timeEl.dataset.value : '';
   const description = teamType === 'new' ? '__new_team__' : '';
   try {
-    const res = await fetch('/api/recruit/create', {
+    const res = await fetch('/api/recruit', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        action: 'create',
         creator_steamid: state.mySteamId,
         creator_name: state.myProfile.personaname || '',
         creator_avatar: state.myProfile.avatarfull || state.myProfile.avatarmedium || '',
@@ -1090,9 +1129,10 @@ async function createRecruitPost() {
     });
     if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error || `HTTP ${res.status}`); }
     showToast('招募已发布');
+    recruitLastPostTime = Date.now();
     document.getElementById('recruitTeamNewTag').checked = false;
-    document.querySelectorAll('input[name="recruitGoal"]').forEach(i => i.checked = false);
-    document.querySelectorAll('input[name="recruitTime"]').forEach(i => i.checked = false);
+    document.querySelectorAll('.pill-option.active[data-group="recruitGoal"]').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.pill-option.active[data-group="recruitTime"]').forEach(p => p.classList.remove('active'));
     recruitPage = 1; recruitGameFilter = '';
     loadRecruitPosts(true);
     loadMyRecruits();
@@ -1111,15 +1151,16 @@ async function loadRecruitPosts(reset) {
   try {
     const params = new URLSearchParams({ page: recruitPage, limit: RECRUIT_PAGE_SIZE });
     if (recruitGameFilter) params.set('game_appid', recruitGameFilter);
-    const res = await fetch(`/api/recruit/list?${params}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    params.set('action', 'list');
+    const res = await fetch(`/api/recruit?${params}`);
+    if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error || `HTTP ${res.status}`); }
     const data = await res.json();
     recruitTotal = data.total || 0;
     if (reset) recruitPosts = data.posts || [];
     else recruitPosts = [...recruitPosts, ...(data.posts || [])];
   } catch (err) {
     if (reset) recruitPosts = [];
-    console.warn('Load recruit posts failed:', err);
+    showToast('加载招募失败: ' + err.message);
   }
   renderRecruitPosts();
 }
@@ -1174,7 +1215,6 @@ function renderRecruitCard(post, showKick) {
   if (meta.goal) badges.push(meta.goal);
   if (meta.time) badges.push(meta.time);
   const badgeClass = b => { const m={'新坑':'badge-purple','娱乐':'badge-green','冲分':'badge-red','日常':'badge-blue','早上':'badge-amber','下午':'badge-orange','晚上':'badge-indigo','深夜':'badge-violet'}; return m[b]||'badge-gray'; };
-  const cardId = `rc-${post.id}`;
   const memberAvatars = members.map((m, idx) => {
     const href = `https://steamcommunity.com/profiles/${m.steamid}`;
     const avatarHtml = m.avatar ? `<img src="${m.avatar}" alt="" loading="lazy">` : `<div class="placeholder">${(m.personaname||'?')[0]}</div>`;
@@ -1188,20 +1228,11 @@ function renderRecruitCard(post, showKick) {
     <div class="recruit-card-top">
       <div class="recruit-game-icon">${iconUrl ? `<img src="${iconUrl}" alt="" loading="lazy">` : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:var(--surface);font-weight:700;font-size:10px;">G</div>`}</div>
       <div class="recruit-game-info">
-        <div class="recruit-game-name">${post.game_name}</div>
+        <div class="recruit-game-name">${post.game_name} ${isCreator ? '<span class="stranger-badge" style="font-size:9px;padding:1px 6px;">创建者</span>' : ''}</div>
         <div class="recruit-meta">${badges.length ? badges.map(b => `<span class="recruit-badge ${badgeClass(b)}">${b}</span>`).join(' ') : ''} ${memberCount}/${post.max_members} 人 · ${timeAgo(post.created_at)}</div>
       </div>
     </div>
-    <div class="recruit-members">${memberAvatars}</div>
-    <div class="recruit-creator">
-      <span style="color:var(--text-dim);font-weight:600;">${post.creator_name || post.creator_steamid}</span>
-      ${isCreator ? '<span class="stranger-badge" style="margin-left:4px;">创建者</span>' : ''}
-    </div>
-    <button class="btn btn-ghost" onclick="const e=document.getElementById('${cardId}');e.style.display=e.style.display==='block'?'none':'block';this.textContent=this.textContent==='收起详情'?'展开详情':'收起详情'" style="font-size:11px;padding:2px 8px;margin-bottom:8px;color:var(--text-muted);">展开详情</button>
-    <div id="${cardId}" style="display:none;font-size:12px;color:var(--text-dim);line-height:1.6;margin-bottom:10px;padding:8px 12px;background:var(--bg);border-radius:8px;">
-      <div>成员：${memberNames || '-'}</div>
-      <div style="margin-top:4px;">创建时间：${new Date(post.created_at).toLocaleString('zh-CN')}</div>
-    </div>
+    <div class="recruit-members">${memberAvatars}<span class="recruit-member-names">${memberNames || '-'}</span></div>
     <div class="recruit-card-actions">
       ${post.status === 0 ? '<span class="stranger-badge" style="background:var(--text-muted);">已关闭</span>' :
         isCreator ? `<button class="btn btn-ghost" onclick="closeRecruitPost(${post.id})">关闭招募</button>` :
@@ -1215,9 +1246,9 @@ function renderRecruitCard(post, showKick) {
 async function joinRecruitPost(postId) {
   if (!state.mySteamId || !state.myProfile) { showToast('请先完成扫描'); return; }
   try {
-    const res = await fetch('/api/recruit/join', {
+    const res = await fetch('/api/recruit', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ post_id: postId, steamid: state.mySteamId, personaname: state.myProfile.personaname || '', avatar: state.myProfile.avatarfull || state.myProfile.avatarmedium || '' }),
+      body: JSON.stringify({ action: 'join', post_id: postId, steamid: state.mySteamId, personaname: state.myProfile.personaname || '', avatar: state.myProfile.avatarfull || state.myProfile.avatarmedium || '' }),
     });
     if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error || `HTTP ${res.status}`); }
     showToast('已加入该招募');
@@ -1231,9 +1262,9 @@ async function joinRecruitPost(postId) {
 async function leaveRecruitPost(postId) {
   if (!state.mySteamId) return;
   try {
-    const res = await fetch('/api/recruit/leave', {
+    const res = await fetch('/api/recruit', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ post_id: postId, steamid: state.mySteamId }),
+      body: JSON.stringify({ action: 'leave', post_id: postId, steamid: state.mySteamId }),
     });
     if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error || `HTTP ${res.status}`); }
     showToast('已退出该招募');
@@ -1247,9 +1278,9 @@ async function leaveRecruitPost(postId) {
 async function closeRecruitPost(postId) {
   if (!state.mySteamId) return;
   try {
-    const res = await fetch('/api/recruit/close', {
+    const res = await fetch('/api/recruit', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ post_id: postId, steamid: state.mySteamId }),
+      body: JSON.stringify({ action: 'close', post_id: postId, steamid: state.mySteamId }),
     });
     if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error || `HTTP ${res.status}`); }
     showToast('招募已关闭');
@@ -1264,9 +1295,9 @@ async function kickMember(postId, targetSteamId) {
   if (!state.mySteamId) return;
   if (!confirm('确定将该成员移出队伍？')) return;
   try {
-    const res = await fetch('/api/recruit/kick', {
+    const res = await fetch('/api/recruit', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ post_id: postId, steamid: state.mySteamId, target_steamid: targetSteamId }),
+      body: JSON.stringify({ action: 'kick', post_id: postId, steamid: state.mySteamId, target_steamid: targetSteamId }),
     });
     if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error || `HTTP ${res.status}`); }
     showToast('已将该成员移出');
@@ -1283,12 +1314,12 @@ async function loadMyRecruits() {
   if (!state.mySteamId) { el.innerHTML = ''; return; }
   el.innerHTML = `<div class="loading"><div class="spinner"></div><p>加载我的招募...</p></div>`;
   try {
-    const res = await fetch(`/api/recruit/mine?steamid=${encodeURIComponent(state.mySteamId)}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const res = await fetch(`/api/recruit?action=mine&steamid=${encodeURIComponent(state.mySteamId)}`);
+    if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error || `HTTP ${res.status}`); }
     myRecruits = await res.json();
   } catch (err) {
     myRecruits = [];
-    console.warn('Load my recruits failed:', err);
+    showToast('加载我的招募失败: ' + err.message);
   }
   renderMyRecruits();
 }
@@ -1326,19 +1357,23 @@ function renderMyRecruits() {
   el.innerHTML = html;
 }
 
-let recruitDismissed = null;
 function getDismissedRecruits() {
-  if (!recruitDismissed) recruitDismissed = new Set();
-  return recruitDismissed;
+  try { return new Set(JSON.parse(localStorage.getItem('recruitDismissed') || '[]')); } catch { return new Set(); }
+}
+function saveDismissedRecruits(s) {
+  localStorage.setItem('recruitDismissed', JSON.stringify([...s]));
 }
 function dismissRecruit(id) {
-  getDismissedRecruits().add(id);
+  const s = getDismissedRecruits();
+  s.add(id);
+  saveDismissedRecruits(s);
   renderMyRecruits();
 }
 function dismissClosedRecruits() {
   const posts = myRecruits || [];
   const s = getDismissedRecruits();
   posts.filter(p => p.status === 0).forEach(p => s.add(p.id));
+  saveDismissedRecruits(s);
   renderMyRecruits();
 }
 
@@ -1385,6 +1420,9 @@ function renderStrangerCard(person, rank) {
   const pct = (person.score * 100).toFixed(1);
   const name = person.personaname || person.steamid;
   const avatar = person.avatar || '';
+  const allTimePct = person._allTimeScore !== undefined ? (person._allTimeScore * 100).toFixed(1) : null;
+  const recentPct = person._recentScore !== undefined && person._recentScore > 0 ? (person._recentScore * 100).toFixed(1) : null;
+  const breakdown = allTimePct && recentPct ? `<div style="font-size:10px;color:var(--text-dim);margin-top:2px;">历史 ${allTimePct}% · 近期 ${recentPct}%</div>` : '';
   const dot = (person.top5 || []).map(g => {
     const owns = state.playerTopGames.some(pg => pg.appid === g.appid);
     return `<span class="top5-dot ${owns ? 'owned' : 'missing'}" title="${g.name}">${owns ? '✓' : '–'}</span>`;
@@ -1416,15 +1454,25 @@ function showStrangerDetail(steamid) {
   const sTop5 = p.top5 || [];
   const sMap = {}; sTop5.forEach(g => { sMap[g.appid] = g; });
   const matchCount = myTop5.filter(g => sMap[g.appid]).length;
-  const pct = computeStrangerMatchScore(myTop5, sTop5);
-  const pctStr = (pct * 100).toFixed(1);
+  const b = computeStrangerBreakdown(myTop5, sTop5, p.recentTop5);
+  const myRecentGames = (state.myRecentGames || [])
+    .filter(g => (g.playtime_2weeks || 0) > 0)
+    .sort((a, b) => (b.playtime_2weeks || 0) - (a.playtime_2weeks || 0))
+    .slice(0, TOP_N);
+  const sRecent = (p.recentTop5 || [])
+    .filter(g => (g.playtime_2weeks || 0) > 0);
+  const sRecentMap = {}; sRecent.forEach(g => { sRecentMap[g.appid] = g; });
+  const recentMatchCount = myRecentGames.length && sRecent.length ? myRecentGames.filter(g => sRecentMap[g.appid]).length : null;
+  const badgeParts = recentMatchCount !== null
+    ? [`Top5 重合 ${matchCount}/${TOP_N}`, `近期Top5 重合 ${recentMatchCount}/${myRecentGames.length}`]
+    : [`Top5 重合 ${matchCount}/${TOP_N}`];
   const dc = document.getElementById('detailContent');
   dc.innerHTML = `
     <div class="detail-header">
       <div class="detail-avatar">${avatar ? `<img src="${avatar}" alt="">` : `<div class="placeholder">${name[0]}</div>`}</div>
       <div class="detail-info">
         <h2>${name}</h2>
-        <div class="match-badge">${pctStr}% 匹配 · Top5 重合 ${matchCount}/${TOP_N}</div>
+        <div class="match-badge">${badgeParts.join(' · ')}</div>
       </div>
       <button class="btn btn-share" id="addFriendBtn" style="font-size:13px;padding:8px 16px;background:var(--brand-secondary);color:#fff;">添加好友</button>
       <button class="btn btn-ghost" id="backBtn">← 返回</button>
@@ -1458,6 +1506,36 @@ function showStrangerDetail(steamid) {
           </div>`;
         }).join('') : '<div style="color:var(--text-dim);padding:12px;text-align:center;">暂无数据</div>'}
       </div>
+      ${myRecentGames.length && sRecent.length ? `
+      <div class="card">
+        <div class="card-title">双方近期 Top${TOP_N} 时长对比</div>
+        ${myRecentGames.map((g) => {
+          const pT = g.playtime_2weeks || 0;
+          const sT = (sRecentMap[g.appid]?.playtime_2weeks) || 0;
+          const has = sRecentMap[g.appid];
+          return `<div class="game-row">
+            <span style="width:24px;height:24px;border-radius:6px;overflow:hidden;flex-shrink:0;background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:${has ? 'var(--brand-success)' : 'var(--text-muted)'}">${has ? '✓' : '✕'}</span>
+            <span class="game-name">${g.name}</span>
+            <div class="game-hours-compare">
+              <span><span class="hour-dot me"></span>${Math.round(pT / 60)}h</span>
+              <span><span class="hour-dot them"></span>${Math.round(sT / 60)}h</span>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>` : ''}
+      ${sRecent.length ? `
+      <div class="card">
+        <div class="card-title">对方近期 Top${TOP_N}</div>
+        ${sRecent.map((g, i) => {
+          const h = Math.round((g.playtime_2weeks || 0) / 60);
+          const iconUrl = g.img_icon_url ? `https://media.steampowered.com/steamcommunity/public/images/apps/${g.appid}/${g.img_icon_url}.jpg` : '';
+          return `<div class="game-row">
+            ${iconUrl ? `<div class="game-icon"><img src="${iconUrl}" alt="" style="width:100%;height:100%;object-fit:cover;"></div>` : `<div class="game-icon" style="background:var(--surface);display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:10px;font-weight:800;">${i + 1}</div>`}
+            <span class="game-name">${g.name}</span>
+            <span style="color:var(--brand-primary);font-weight:600;font-size:13px;">${h}h</span>
+          </div>`;
+        }).join('')}
+      </div>` : ''}
     </div>
     <div class="card" style="text-align:center;">
       <p style="font-size:14px;color:var(--text-dim);margin-bottom:16px;font-weight:600;">点击下方按钮前往 Steam 添加好友</p>
@@ -1466,23 +1544,34 @@ function showStrangerDetail(steamid) {
   `;
 }
 
-function computeStrangerMatchScore(myTop5, strangerTop5) {
-  if (!myTop5 || !myTop5.length || !strangerTop5 || !strangerTop5.length) return 0;
-  const sMap = {};
-  strangerTop5.forEach(g => { sMap[g.appid] = g; });
-  let weightedSum = 0, maxWeight = 0, matched = 0;
-  for (let i = 0; i < myTop5.length; i++) {
-    const pg = myTop5[i];
-    const w = TOP_N - i;
-    maxWeight += w;
-    const sg = sMap[pg.appid];
-    if (!sg) continue;
-    matched++;
-    const pT = pg.playtime_forever || 0;
-    const sT = sg.playtime_forever || 0;
-    weightedSum += w * (1 - Math.abs(pT - sT) / (pT + sT + 1));
+function computeStrangerBreakdown(myTop5, strangerTop5, strangerRecent) {
+  const allTime = computeScore(myTop5, strangerTop5);
+  const myRecent = (state.myRecentGames || [])
+    .filter(g => (g.playtime_2weeks || 0) > 0)
+    .sort((a, b) => (b.playtime_2weeks || 0) - (a.playtime_2weeks || 0))
+    .slice(0, TOP_N)
+    .map(g => ({ ...g, playtime_forever: g.playtime_2weeks }));
+  const sRecent = (strangerRecent || [])
+    .filter(g => (g.playtime_2weeks || 0) > 0)
+    .map(g => ({ ...g, playtime_forever: g.playtime_2weeks }));
+  if (!myRecent.length || !sRecent.length) return { total: allTime, allTime, recent: 0 };
+  const recent = computeScore(myRecent, sRecent);
+  return { total: Math.min(allTime * 0.4 + recent * 0.6, 1.0), allTime, recent };
+}
+
+function computeStrangerMatchScore(myTop5, strangerTop5, strangerRecent) {
+  return computeStrangerBreakdown(myTop5, strangerTop5, strangerRecent).total;
+}
+
+let recruitLastPostTime = 0;
+function togglePill(el) {
+  const group = el.dataset.group;
+  if (el.classList.contains('active')) {
+    el.classList.remove('active');
+    return;
   }
-  return Math.min(((weightedSum / maxWeight) * 0.6 + (matched / TOP_N) * 0.4) * 1.3, 1.0);
+  document.querySelectorAll(`.pill-option[data-group="${group}"]`).forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
 }
 
 function renderRecruit() {
@@ -1501,26 +1590,26 @@ function renderRecruit() {
       .recruit-mode-btn:hover{background:rgba(255,255,255,0.5);}
       .recruit-mode-btn.active{background:#fff0f0;color:var(--brand-primary);border-color:var(--border-thick);box-shadow:2px 2px 0 var(--border-thick);}
       .recruit-mode-btn.active::before{content:'';position:absolute;left:-1px;top:7px;bottom:7px;width:4px;background:var(--brand-primary);border-radius:0 3px 3px 0;border:2px solid var(--border-thick);border-left:none;}
-      .recruit-list{display:flex;flex-direction:column;gap:10px;}
-      .recruit-card{background:var(--surface);border:3px solid var(--border-thick);border-radius:16px;padding:16px;}
-      .recruit-card-top{display:flex;gap:12px;align-items:center;margin-bottom:6px;}
-      .recruit-game-icon{width:44px;height:44px;border-radius:10px;overflow:hidden;flex-shrink:0;border:2px solid var(--border-thick);}
+      .pill-option{display:inline-flex;align-items:center;gap:4px;cursor:pointer;padding:4px 10px;border:2px solid var(--border-thick);border-radius:8px;background:var(--surface);font-size:12px;font-weight:600;user-select:none;transition:all 0.15s;}
+      .pill-option.active{background:var(--brand-yellow);}
+      .recruit-list{display:flex;flex-direction:column;gap:8px;}
+      .recruit-card{background:var(--surface);border:3px solid var(--border-thick);border-radius:14px;padding:12px;}
+      .recruit-card-top{display:flex;gap:10px;align-items:center;margin-bottom:4px;}
+      .recruit-game-icon{width:36px;height:36px;border-radius:8px;overflow:hidden;flex-shrink:0;border:2px solid var(--border-thick);}
       .recruit-game-icon img{width:100%;height:100%;object-fit:cover;}
-      .recruit-game-info{flex:1;}
-      .recruit-game-name{font-weight:700;font-size:14px;color:var(--text);}
-      .recruit-meta{font-size:12px;color:var(--text-dim);font-weight:600;margin-top:2px;}
+      .recruit-game-info{flex:1;min-width:0;}
+      .recruit-game-name{font-weight:700;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+      .recruit-meta{font-size:11px;color:var(--text-dim);font-weight:600;margin-top:1px;}
 
-      .recruit-creator{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-dim);font-weight:600;margin-bottom:12px;}
-      .recruit-creator-avatar{width:24px;height:24px;border-radius:6px;overflow:hidden;flex-shrink:0;border:2px solid var(--border-thick);}
-      .recruit-creator-avatar img{width:100%;height:100%;object-fit:cover;}
-      .recruit-creator-avatar .placeholder{width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:var(--surface);font-size:10px;font-weight:700;color:var(--text-muted);}
-      .recruit-card-actions{display:flex;gap:8px;justify-content:flex-end;}
-      .recruit-members{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px;padding-left:0;}
-      .recruit-member-avatar{width:28px;height:28px;border-radius:8px;overflow:hidden;border:2px solid var(--border-thick);position:relative;flex-shrink:0;}
-      .recruit-member-avatar img,.recruit-member-avatar .placeholder{width:100%;height:100%;object-fit:cover;display:flex;align-items:center;justify-content:center;background:var(--surface);font-size:10px;font-weight:700;color:var(--text-muted);}
-      .recruit-kick-btn{position:absolute;top:-5px;right:-5px;width:16px;height:16px;border-radius:50%;border:2px solid var(--border-thick);background:#fff;color:#e53e3e;font-size:11px;font-weight:700;line-height:1;cursor:pointer;display:none;align-items:center;justify-content:center;padding:0;}
+      .recruit-card-actions{display:flex;gap:6px;justify-content:flex-end;margin-top:4px;}
+      .recruit-card-actions .btn{padding:6px 14px;font-size:12px;border-radius:10px;}
+      .recruit-members{display:flex;gap:3px;flex-wrap:wrap;align-items:center;}
+      .recruit-member-avatar{width:24px;height:24px;border-radius:6px;overflow:hidden;border:2px solid var(--border-thick);position:relative;flex-shrink:0;}
+      .recruit-member-avatar img,.recruit-member-avatar .placeholder{width:100%;height:100%;object-fit:cover;display:flex;align-items:center;justify-content:center;background:var(--surface);font-size:8px;font-weight:700;color:var(--text-muted);}
+      .recruit-member-names{font-size:11px;color:var(--text-dim);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;}
+      .recruit-kick-btn{position:absolute;top:-4px;right:-4px;width:14px;height:14px;border-radius:50%;border:2px solid var(--border-thick);background:#fff;color:#e53e3e;font-size:9px;font-weight:700;line-height:1;cursor:pointer;display:none;align-items:center;justify-content:center;padding:0;}
       .recruit-member-avatar.is-kickable:hover .recruit-kick-btn{display:flex;}
-      .recruit-badge{display:inline-block;font-size:11px;padding:1px 6px;border-radius:6px;font-weight:700;border:2px solid var(--border-thick);vertical-align:middle;margin-right:2px;}
+      .recruit-badge{display:inline-block;font-size:10px;padding:1px 5px;border-radius:5px;font-weight:700;border:2px solid var(--border-thick);vertical-align:middle;margin-right:2px;}
       .badge-purple{background:#e9d8fd;color:#6b46c1;}
       .badge-green{background:#c6f6d5;color:#276749;}
       .badge-red{background:#fed7d7;color:#9b2c2c;}
@@ -1750,7 +1839,7 @@ async function runRecentMatch(myRecent) {
         const recent = await fetchRecentGames(f.steamid, state.myApiKey);
         const fRecent = recent.filter(g => (g.playtime_2weeks || 0) > 0).map(g => ({ ...g, playtime_forever: g.playtime_2weeks }));
         const shared = myRecent.filter(pg => fRecent.some(fg => fg.appid === pg.appid)).length;
-        const score = computeMatchScore(myRecent, fRecent, shared);
+        const score = computeScore(myRecent, fRecent, shared);
         fResults.push({ steamid: f.steamid, name: f.summary?.personaname || f.steamid, avatar: f.summary?.avatarmedium || '', score, games: fRecent, source: '好友' });
       } catch (e) { console.warn(`Recent failed: ${f.steamid}`, e); }
     }
@@ -1765,7 +1854,7 @@ async function runRecentMatch(myRecent) {
         const sRecent = (s.recentTop5 || []).filter(g => (g.playtime_2weeks || 0) > 0).map(g => ({ ...g, playtime_forever: g.playtime_2weeks }));
         if (!sRecent.length) continue;
         const shared = myRecent.filter(pg => sRecent.some(sg => sg.appid === pg.appid)).length;
-        const score = computeMatchScore(myRecent, sRecent, shared);
+        const score = computeScore(myRecent, sRecent, shared);
         allResults.push({ steamid: s.steamid, name: s.personaname || s.steamid, avatar: s.avatar || '', score, games: sRecent, source: '游戏搭子' });
       }
     }
@@ -1800,10 +1889,10 @@ async function runRecentMatch(myRecent) {
           <div class="friend-meta">近期活跃 · 匹配 ${pct}%</div>
           <div class="top5-dots">${dots}</div>
         </div>
-        <div class="friend-score-col">
-          <div class="score-value" style="color:${scoreColor(parseFloat(pct))}">${pct}%</div>
-          <div class="score-bar"><div class="score-bar-fill" style="width:${pct}%;background:${scoreColor(parseFloat(pct))}"></div></div>
-        </div>
+    <div class="friend-score-col">
+      <div class="score-value" style="color:${scoreColor(parseFloat(pct))}">${pct}%</div>
+      <div class="score-bar"><div class="score-bar-fill" style="width:${pct}%;background:${scoreColor(parseFloat(pct))}"></div></div>
+    </div>
       </div>`;
     }).join('')}</div></div>
   `;
@@ -1872,3 +1961,4 @@ function showRecentDetail(steamid) {
     </div>
   `;
 }
+
