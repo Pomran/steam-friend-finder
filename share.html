@@ -50,7 +50,7 @@ body {
   padding: 28px; margin-bottom: 24px; box-shadow: var(--shadow-bento);
 }
 .card-title { font-size: 18px; font-weight: 900; margin-bottom: 20px; color: var(--border-thick); display: flex; align-items: center; gap: 10px; }
-.profile-row { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; }
+.profile-row { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
 .avatar { width: 56px; height: 56px; border-radius: 16px; border: 2.5px solid var(--border-thick); flex-shrink: 0; overflow: hidden; background: var(--surface); }
 .avatar img { width: 100%; height: 100%; object-fit: cover; }
 .avatar .placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 900; color: var(--border-thick); background: var(--brand-yellow); }
@@ -130,7 +130,8 @@ body {
   .friend-score-col { text-align: center; display: flex; flex-direction: column; align-items: center; }
   .game-row { padding: 10px 14px; flex-wrap: wrap; gap: 8px; }
   .card-title { font-size: 16px; }
-  [style*="grid-template-columns: 1fr 1fr"] { grid-template-columns: 1fr !important; }
+  .profile-row { flex-direction: column; align-items: center; text-align: center; }
+  [style*="grid-template-columns:1fr 1fr"] { grid-template-columns: 1fr !important; }
 }
 </style>
 </head>

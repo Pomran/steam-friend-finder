@@ -15,6 +15,8 @@ const state = {
   recentMatchResults: null,
   gameWeights: {},
   showWeights: false,
+  weeklyReport: null,
+  friendsWeekly: null,
 };
 
 const STRANGER_API_BASE = '';
@@ -38,6 +40,8 @@ const strangersCache = { data: null, ts: 0 };
 const STRANGERS_CACHE_TTL = 2 * 60 * 1000;
 const STRANGERS_PAGE_SIZE = 10;
 let strangersDisplayCount = STRANGERS_PAGE_SIZE;
+const FRIEND_RACE_PAGE = 10;
+let friendRaceDisplayCount = FRIEND_RACE_PAGE;
 
 function getExcludedSet() {
   try { return new Set(JSON.parse(localStorage.getItem('excludedGames') || '[]')); } catch { return new Set(); }
@@ -52,9 +56,7 @@ function toggleExcluded(appid) {
 }
 
 function getGameWeight(appid) {
-  if (state.gameWeights[appid] !== undefined) return state.gameWeights[appid];
-  const rank = state.playerTopGames.findIndex(g => g.appid === appid);
-  return rank >= 0 ? Math.max(TOP_N - rank, 1) : 1;
+  return state.gameWeights[appid] ?? 3;
 }
 function setGameWeight(appid, weight) {
   state.gameWeights[appid] = weight;
@@ -266,6 +268,7 @@ document.addEventListener('DOMContentLoaded', () => {
       switchTab(btn.dataset.tab);
       if (btn.dataset.tab === 'tab-strangers') loadStrangers();
       if (btn.dataset.tab === 'tab-recruit') renderRecruit();
+      if (btn.dataset.tab === 'tab-weekly') renderWeeklyReport();
     }
   });
   document.getElementById('matchesContent').addEventListener('click', (e) => {
@@ -383,6 +386,18 @@ async function startFetch() {
     switchTab('tab-library');
     updateProgress(100);
     hideProgress(500);
+    // fire-and-forget weekly snapshot (deferred, payload-slimmed)
+    setTimeout(() => {
+      const payload = state.playerGames
+        .filter(g => (g.playtime_forever || 0) > 0)
+        .map(g => ({ appid: g.appid, name: g.name, img_icon_url: g.img_icon_url || '', playtime_forever: g.playtime_forever }));
+      if (!payload.length) return;
+      fetch('/api/weekly/snapshot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ steamid: state.mySteamId, games: payload }),
+      }).catch(() => {});
+    }, 0);
     // auto re-opt-in if previously opted in
     if (localStorage.getItem('strangerOptIn') === 'true') {
       await callStrangerOptIn(true, true);
@@ -1605,6 +1620,330 @@ function togglePill(el) {
   el.classList.add('active');
 }
 
+function renderWeeklyReport(useCache) {
+  const el = document.getElementById('weeklyContent');
+  const sid = state.mySteamId;
+  if (!sid || !state.playerGames.length) {
+    el.innerHTML = `<div class="empty"><p>请先完成扫描</p></div>`;
+    return;
+  }
+
+  const uid = sid;
+
+  const myRecentH = Math.round(state.playerGames.reduce((s, g) => s + ((g.playtime_2weeks || 0) / 60), 0) * 10) / 10;
+
+  const top3 = state.playerGames
+    .filter(g => (g.playtime_2weeks || 0) > 0)
+    .sort((a, b) => (b.playtime_2weeks || 0) - (a.playtime_2weeks || 0))
+    .slice(0, 3)
+    .map(g => ({
+      appid: g.appid, name: g.name,
+      hours: Math.round((g.playtime_2weeks || 0) / 6) / 10,
+      iconUrl: g.img_icon_url ? `https://media.steampowered.com/steamcommunity/public/images/apps/${g.appid}/${g.img_icon_url}.jpg` : '',
+    }));
+
+  const similarFriend = findMostSimilarFriend();
+
+  const friendRace = state.friendsData
+    .filter(f => f.games && f.games.length > 0)
+    .map(f => {
+      const recentH = Math.round(f.games.reduce((s, g) => s + ((g.playtime_2weeks || 0) / 60), 0) * 10) / 10;
+      const totalH = Math.round(f.games.reduce((s, g) => s + (g.playtime_forever || 0), 0) / 60);
+      return {
+        steamid: f.steamid,
+        name: f.summary?.personaname || f.steamid.slice(-4),
+        avatar: f.summary?.avatarmedium || '',
+        totalH, recentH,
+      };
+    })
+    .sort((a, b) => b.recentH - a.recentH);
+  friendRaceDisplayCount = Math.min(friendRaceDisplayCount, friendRace.length);
+
+  const friendGameAgg = {};
+  for (const f of state.friendsData) {
+    if (!f.games) continue;
+    for (const g of f.games) {
+      const h = (g.playtime_2weeks || 0) / 60;
+      if (h > 0) {
+        if (!friendGameAgg[g.appid]) {
+          friendGameAgg[g.appid] = { appid: g.appid, name: g.name, iconUrl: g.img_icon_url ? `https://media.steampowered.com/steamcommunity/public/images/apps/${g.appid}/${g.img_icon_url}.jpg` : '', totalHours: 0, players: 0 };
+        }
+        friendGameAgg[g.appid].totalHours += h;
+        friendGameAgg[g.appid].players++;
+      }
+    }
+  }
+  const friendTopGames = Object.values(friendGameAgg).sort((a, b) => b.players - a.players).slice(0, 5);
+
+  if (useCache && state.weeklyReport !== null) {
+    renderWeeklyContent(el, state.weeklyReport, friendRace, myRecentH, top3, similarFriend, friendTopGames);
+    return;
+  }
+
+  el.innerHTML = `<div class="loading"><div class="spinner"></div><p>加载周报数据...</p></div>`;
+
+  fetch(`/api/weekly/report?steamid=${encodeURIComponent(uid)}`)
+    .then(r => r.ok ? r.json() : null)
+    .then(myReport => {
+      state.weeklyReport = myReport;
+      renderWeeklyContent(el, myReport, friendRace, myRecentH, top3, similarFriend, friendTopGames);
+    })
+    .catch(() => {
+      renderWeeklyContent(el, null, friendRace, myRecentH, top3, similarFriend, friendTopGames);
+    });
+}
+
+function findMostSimilarFriend() {
+  const myRecent = {};
+  state.playerGames.forEach(g => {
+    const h = (g.playtime_2weeks || 0) / 60;
+    if (h > 0) myRecent[g.appid] = h;
+  });
+  const myApps = Object.keys(myRecent);
+  if (!myApps.length) return null;
+
+  let best = null, bestScore = 0;
+  for (const f of state.friendsData) {
+    if (!f.games || !f.games.length) continue;
+    const fgMap = {};
+    f.games.forEach(g => { fgMap[g.appid] = (g.playtime_2weeks || 0) / 60; });
+    let overlap = 0;
+    for (const appid of myApps) {
+      if (fgMap[appid] > 0) overlap++;
+    }
+    if (overlap > bestScore) {
+      bestScore = overlap;
+      best = {
+        steamid: f.steamid,
+        name: f.summary?.personaname || f.steamid.slice(-4),
+        avatar: f.summary?.avatarmedium || '',
+        overlap,
+        sharedApps: myApps.filter(a => fgMap[a] > 0),
+      };
+    }
+  }
+  return best;
+}
+
+function renderWeeklyContent(el, myReport, friendRace, myRecentH, top3, similarFriend, friendTopGames) {
+  const weeks = myReport?.weeks || [];
+  const current = weeks.length > 0 ? JSON.parse(weeks[0].snapshot) : null;
+  const prev = weeks.length > 1 ? JSON.parse(weeks[1].snapshot) : null;
+
+  const currentTotal = Math.round((current?.total || 0) / 60);
+  const deltaHtml = prev ? (() => {
+    const prevTotal = Math.round((prev.total || 0) / 60);
+    const d = currentTotal - prevTotal;
+    const label = d > 0 ? '升' : (d < 0 ? '降' : '平');
+    return `<div class="stat-item"><div class="stat-value ${d > 0 ? '' : 'stat-value-down'}">${d > 0 ? '+' : ''}${d}h</div><div class="stat-label">较上周 ${label}</div></div>`;
+  })() : `<div class="stat-item"><div class="stat-value">基准周</div><div class="stat-label">首次记录</div></div>`;
+
+  const thisWeekGames = prev ? computeWeeklyDiffs(current.games, prev.games) : [];
+  const winners = thisWeekGames.filter(g => g.diff > 1).sort((a, b) => b.diff - a.diff).slice(0, 5);
+  const losers = thisWeekGames.filter(g => g.diff < -1).sort((a, b) => a.diff - b.diff).slice(0, 5);
+
+  const newGames = prev ? detectNewGames(current.games, prev.games) : [];
+  const streak = countStreak(weeks);
+
+  let historyHtml = '';
+  if (weeks.length > 1) {
+    const historyPoints = weeks.slice().reverse().map(w => {
+      const s = JSON.parse(w.snapshot);
+      return { week: w.week, total: Math.round((s.total || 0) / 60) };
+    });
+    const maxH = Math.max(...historyPoints.map(p => p.total), 1);
+    historyHtml = `<div class="card">
+      <div class="card-title">近期趋势</div>
+      <div style="display:flex;align-items:flex-end;gap:6px;height:80px;padding:8px 0;">
+        ${historyPoints.map(p => {
+          const pct = (p.total / maxH) * 100;
+          return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;">
+            <div style="width:100%;background:var(--brand-primary);border-radius:6px 6px 0 0;border:2px solid var(--border-thick);height:${Math.max(pct, 4)}%;min-height:8px;"></div>
+            <span style="font-size:9px;font-weight:700;color:var(--text-dim);white-space:nowrap;">${p.week.replace('20', '').replace('-W', 'W')}</span>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  }
+
+  el.innerHTML = `
+    <div class="stats-grid">
+      <div class="stat-item"><div class="stat-value">${currentTotal}h</div><div class="stat-label">总游戏时长</div></div>
+      ${deltaHtml}
+      <div class="stat-item"><div class="stat-value">${(current?.games || []).length}</div><div class="stat-label">游戏总数</div></div>
+    </div>
+    ${streak > 1 ? `<div style="text-align:center;padding:8px 0 16px 0;font-size:13px;font-weight:700;color:var(--text-muted);">连续记录 ${streak} 周</div>` : ''}
+    ${historyHtml}
+    ${top3.length ? `<div class="card">
+      <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;">
+        <span>本周 TOP3</span>
+        ${myRecentH > 0 ? `<span style="font-size:13px;font-weight:600;color:var(--text-dim);">本周 ${myRecentH}h</span>` : ''}
+      </div>
+      ${top3.map(g => `<div class="game-row">
+        ${g.iconUrl ? `<div class="game-icon"><img src="${g.iconUrl}" alt=""></div>` : `<div class="game-icon" style="display:flex;align-items:center;justify-content:center;background:var(--surface);font-size:12px;font-weight:800;color:var(--text-muted);">?</div>`}
+        <span class="game-name">${g.name}</span>
+        <span style="font-size:13px;font-weight:700;color:var(--brand-primary);">${g.hours}h</span>
+      </div>`).join('')}
+    </div>` : ''}
+    ${winners.length ? `<div class="card">
+      <div class="card-title">本周飙升</div>
+      ${winners.map(g => `<div class="game-row">
+        ${g.iconUrl ? `<div class="game-icon"><img src="${g.iconUrl}" alt=""></div>` : `<div class="game-icon" style="display:flex;align-items:center;justify-content:center;background:var(--surface);font-size:12px;font-weight:800;color:var(--text-muted);">?</div>`}
+        <span class="game-name">${g.name}</span>
+        <span style="font-size:13px;font-weight:700;color:var(--brand-success);">+${g.diff}h</span>
+        <span style="font-size:12px;color:var(--text-dim);font-weight:600;">${g.thisWeek}h</span>
+      </div>`).join('')}
+    </div>` : ''}
+    ${losers.length ? `<div class="card">
+      <div class="card-title">本周熄火</div>
+      ${losers.map(g => `<div class="game-row" style="opacity:0.6;">
+        <span class="game-name" style="text-decoration:line-through;">${g.name}</span>
+        <span style="font-size:13px;font-weight:700;color:var(--text-muted);">${g.diff}h</span>
+        <span style="font-size:12px;color:var(--text-dim);font-weight:600;">上周 ${g.lastWeek}h</span>
+      </div>`).join('')}
+    </div>` : ''}
+    ${newGames.length ? `<div class="card">
+      <div class="card-title">本周新游 / 回坑</div>
+      ${newGames.slice(0, 5).map(g => `<div class="game-row">
+        ${g.iconUrl ? `<div class="game-icon"><img src="${g.iconUrl}" alt=""></div>` : `<div class="game-icon" style="display:flex;align-items:center;justify-content:center;background:var(--surface);font-size:12px;font-weight:800;color:var(--text-muted);">?</div>`}
+        <span class="game-name">${g.name}</span>
+        <span style="font-size:12px;color:var(--brand-success);font-weight:700;">${g.label}</span>
+      </div>`).join('')}
+    </div>` : ''}
+    <div class="card">
+      <div class="card-title">本周好友赛马</div>
+      ${renderFriendRace(friendRace, myRecentH)}
+    </div>
+    ${similarFriend ? `<div class="card">
+      <div class="card-title">和你本周最像的人</div>
+      <div class="friend-card" style="cursor:default;padding:16px 22px;">
+        <div class="friend-avatar" style="width:46px;height:46px;border-radius:14px;">
+          ${similarFriend.avatar ? `<img src="${similarFriend.avatar}" alt="" style="width:100%;height:100%;object-fit:cover;">` : `<div class="placeholder">${similarFriend.name[0]}</div>`}
+        </div>
+        <div class="friend-info">
+          <div class="friend-name">${similarFriend.name}</div>
+          <div class="friend-meta"><strong>${similarFriend.overlap}</strong> 款共同游戏</div>
+        </div>
+        <div style="font-size:20px;font-weight:900;color:var(--brand-purple);">#1</div>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;">
+        ${similarFriend.sharedApps.slice(0, 6).map(a => `<span style="font-size:11px;font-weight:700;background:var(--surface);padding:4px 10px;border-radius:6px;border:2px solid var(--border-thick);">${state.playerGames.find(g => g.appid === +a)?.name || a}</span>`).join('')}
+        ${similarFriend.sharedApps.length > 6 ? `<span style="font-size:11px;color:var(--text-muted);font-weight:600;padding:4px 6px;">+${similarFriend.sharedApps.length - 6}</span>` : ''}
+      </div>
+    </div>` : ''}
+    ${friendTopGames && friendTopGames.length ? `<div class="card">
+      <div class="card-title">本周好友在玩游戏 Top5</div>
+      ${friendTopGames.map(g => `<div class="game-row">
+        ${g.iconUrl ? `<div class="game-icon"><img src="${g.iconUrl}" alt=""></div>` : `<div class="game-icon" style="display:flex;align-items:center;justify-content:center;background:var(--surface);font-size:12px;font-weight:800;color:var(--text-muted);">?</div>`}
+        <span class="game-name">${g.name}</span>
+        <span style="font-size:12px;color:var(--text-dim);font-weight:600;">${g.players} 人在玩</span>
+        <span style="font-size:13px;font-weight:700;color:var(--brand-primary);">${Math.round(g.totalHours * 10) / 10}h</span>
+      </div>`).join('')}
+    </div>` : ''}
+    <div style="text-align:center;margin-top:8px;">
+      <button class="btn btn-ghost" onclick="shareWeeklyReport()" style="font-size:12px;padding:10px 20px;">分享周报</button>
+    </div>
+  `;
+}
+
+function computeWeeklyDiffs(currentGames, prevGames) {
+  const prevMap = {};
+  (prevGames || []).forEach(g => { prevMap[g.appid] = Math.round((g.playtime_forever || 0) / 6) / 10; });
+  return (currentGames || []).map(g => {
+    const prev = prevMap[g.appid] || 0;
+    const cur = Math.round((g.playtime_forever || 0) / 6) / 10;
+    const diff = Math.round((cur - prev) * 10) / 10;
+    if (Math.abs(diff) < 0.1) return null;
+    const iconUrl = g.img_icon_url ? `https://media.steampowered.com/steamcommunity/public/images/apps/${g.appid}/${g.img_icon_url}.jpg` : '';
+    return { appid: g.appid, name: g.name, iconUrl, thisWeek: cur, lastWeek: prev, diff };
+  }).filter(Boolean);
+}
+
+function detectNewGames(currentGames, prevGames) {
+  const prevMap = {};
+  (prevGames || []).forEach(g => { prevMap[g.appid] = Math.round((g.playtime_forever || 0) / 6) / 10; });
+  return (currentGames || []).map(g => {
+    const prevH = prevMap[g.appid] || 0;
+    const curH = Math.round((g.playtime_forever || 0) / 6) / 10;
+    if (prevH <= 0 && curH > 0) {
+      const iconUrl = g.img_icon_url ? `https://media.steampowered.com/steamcommunity/public/images/apps/${g.appid}/${g.img_icon_url}.jpg` : '';
+      return { appid: g.appid, name: g.name, iconUrl, hours: curH, label: '新游' };
+    }
+    if (prevH > 0 && curH > prevH + 5 && prevH < 1) {
+      const iconUrl = g.img_icon_url ? `https://media.steampowered.com/steamcommunity/public/images/apps/${g.appid}/${g.img_icon_url}.jpg` : '';
+      return { appid: g.appid, name: g.name, iconUrl, hours: curH, label: '回坑' };
+    }
+    return null;
+  }).filter(Boolean).sort((a, b) => b.hours - a.hours);
+}
+
+function countStreak(weeks) {
+  if (!weeks.length) return 0;
+  let count = 1;
+  for (let i = 0; i < weeks.length - 1; i++) {
+    const cur = weeks[i].week;
+    const next = weeks[i + 1].week;
+    const curNum = parseInt(cur.split('-W')[1]);
+    const nextNum = parseInt(next.split('-W')[1]);
+    const curYear = parseInt(cur.split('-W')[0]);
+    const nextYear = parseInt(next.split('-W')[0]);
+    if (curYear === nextYear && curNum - nextNum === 1) count++;
+    else if (curYear === nextYear + 1 && nextNum >= 51 && curNum === 1) count++;
+    else break;
+  }
+  return count;
+}
+
+async function shareWeeklyReport() {
+  const el = document.getElementById('weeklyContent');
+  if (!el || !el.children.length) return;
+  const c = await captureAndFooter(el, 2, '周报');
+  if (!c) return;
+  const blob = await new Promise(r => c.toBlob(b => r(b), 'image/png'));
+  if (!blob) return;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `Steam周报_${new Date().toISOString().slice(0, 10)}.png`;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function expandFriendRace() {
+  friendRaceDisplayCount += FRIEND_RACE_PAGE;
+  renderWeeklyReport(true);
+}
+
+function renderFriendRace(race, myRecentH) {
+  if (!race || !race.length) {
+    return `<div style="color:var(--text-dim);padding:12px;text-align:center;font-size:13px;font-weight:600;">暂无好友周报数据</div>`;
+  }
+
+  const shown = race.slice(0, friendRaceDisplayCount);
+  const hasMore = race.length > friendRaceDisplayCount;
+
+  return `<div class="friend-list">
+    ${shown.map((f, i) => {
+      const diff = Math.round((f.recentH - myRecentH) * 10) / 10;
+      const rank = i + 1;
+      return `<div class="friend-card" style="padding:16px 22px;gap:14px;cursor:default;">
+        <div class="friend-avatar" style="width:40px;height:40px;border-radius:12px;">
+          ${f.avatar ? `<img src="${f.avatar}" alt="" style="width:100%;height:100%;object-fit:cover;">` : `<div class="placeholder" style="font-size:16px;">${rank}</div>`}
+        </div>
+        <div class="friend-info">
+          <div class="friend-name" style="font-size:14px;">${f.name}</div>
+          <div class="friend-meta" style="font-size:11px;">总 ${f.totalH}h</div>
+        </div>
+        <div class="friend-score-col">
+          <div class="score-value" style="font-size:20px;">${f.recentH}h</div>
+          <div style="font-size:11px;font-weight:700;color:${diff > 0 ? 'var(--brand-success)' : 'var(--text-dim)'};">${diff > 0 ? '比你多' + diff + 'h' : diff < 0 ? '比你少' + Math.abs(diff) + 'h' : '持平'}</div>
+        </div>
+      </div>`;
+    }).join('')}
+  </div>
+  ${hasMore ? `<button class="btn btn-ghost" onclick="expandFriendRace()" style="width:100%;margin-top:12px;">显示更多（${race.length - friendRaceDisplayCount} 人）</button>` : ''}`;
+}
+
 function renderRecruit() {
   const el = document.getElementById('recruitContent');
   const mode = state._recruitMode || 'match';
@@ -1814,7 +2153,7 @@ function renderRecruitRecent(container) {
   }
 
   const myRecent = state.myRecentGames
-    .filter(g => (g.playtime_2weeks || 0) > 0)
+    .filter(g => (g.playtime_2weeks || 0) > 0 && !getExcludedSet().has(g.appid))
     .sort((a, b) => (b.playtime_2weeks || 0) - (a.playtime_2weeks || 0))
     .slice(0, TOP_N)
     .map(g => ({ ...g, playtime_forever: g.playtime_2weeks }));
