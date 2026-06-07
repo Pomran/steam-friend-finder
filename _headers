@@ -1,0 +1,9 @@
+# Cloudflare Pages headers
+/data/images/*
+  Cache-Control: public, max-age=31536000, immutable
+/data/video/*
+  Cache-Control: public, max-age=31536000, immutable
+/data/text/*
+  Cache-Control: public, max-age=0, must-revalidate
+/*.json
+  Cache-Control: public, max-age=0, must-revalidate

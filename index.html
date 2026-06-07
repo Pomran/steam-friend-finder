@@ -485,6 +485,10 @@ body {
 .shared-item .game-hours .my-hours { color: var(--brand-secondary); font-weight: 900; }
 .shared-item .game-hours .friend-hours { color: var(--brand-yellow); font-weight: 900; }
 
+.weight-control { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.weight-control input.game-weight { width: 60px; height: 4px; cursor: pointer; accent-color: var(--brand-primary); }
+.weight-control .weight-label { font-size: 11px; font-weight: 800; min-width: 32px; text-align: center; color: var(--text-muted); }
+
 .loading { text-align: center; padding: 90px 24px; }
 .loading .spinner {
   width: 52px; height: 52px;
@@ -648,6 +652,19 @@ body {
   .shared-item { padding: 12px 16px; }
   .shared-item .game-name { font-size: 13px; }
   .custom-form > div[style*="display:flex"] { flex-direction: column; }
+  .game-row { flex-wrap: wrap; gap: 8px; }
+  .weight-control {
+    width: 100%;
+    order: 100;
+    justify-content: center;
+    gap: 8px;
+    padding-top: 6px;
+    margin-top: 2px;
+    border-top: 1px dashed #cbd5e1;
+  }
+  .weight-control input.game-weight { width: 140px; height: 6px; }
+  .weight-control .weight-label { display: inline; font-size: 12px; }
+  .game-row .exclude-btn { margin-left: auto; }
 }
 
 @media (max-width: 480px) {
@@ -655,7 +672,7 @@ body {
   .header-desc { font-size: 14px; }
   .card { padding: 20px; }
   .config-panel { padding: 20px; }
-  .game-row { padding: 12px 14px; }
+  .game-row { padding: 10px 12px; }
   .stats-grid { grid-template-columns: 1fr; }
   .tabs { flex-wrap: wrap; gap: 6px; }
   .tab-btn { font-size: 13px; padding: 10px 12px; }
@@ -668,6 +685,7 @@ body {
   .game-name { font-size: 13px; }
   .stat-value { font-size: 26px; }
   .footer { font-size: 11px; }
+  .weight-control input.game-weight { width: 110px; }
 }
 </style>
 </head>

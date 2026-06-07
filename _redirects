@@ -1,0 +1,4 @@
+# Cloudflare Pages redirects
+# Redirect .php to .html
+/photo.php  /photo.html  301
+/video.php  /video.html  301

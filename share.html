@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Steam 玩伴探测 · 分享匹配</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800;900;950&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #f4f7fc;
+  --card: #ffffff;
+  --surface: #f8fafc;
+  --brand-primary: #ff5e62;
+  --brand-secondary: #3b82f6;
+  --brand-success: #10b981;
+  --brand-yellow: #fbc531;
+  --brand-purple: #8c7ae6;
+  --text: #1e293b;
+  --text-dim: #64748b;
+  --text-muted: #94a3b8;
+  --border-thick: #0f172a;
+  --shadow-bento: 6px 6px 0px var(--border-thick);
+  --shadow-btn: 4px 4px 0px var(--border-thick);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  background: var(--bg);
+  background-image: radial-gradient(rgba(15,23,42,0.08) 2px, transparent 2px);
+  background-size: 28px 28px;
+  color: var(--text);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  padding-bottom: 40px;
+}
+.app-container { max-width: 680px; margin: 0 auto; padding: 40px 20px; }
+.header { text-align: center; margin-bottom: 28px; }
+.header-badge {
+  display: inline-block; font-size: 13px; font-weight: 900; letter-spacing: 1px;
+  background: var(--brand-primary); color: #fff; padding: 6px 14px;
+  border: 2.5px solid var(--border-thick); border-radius: 100px;
+  margin-bottom: 14px;
+}
+.header h1 { font-size: 32px; font-weight: 950; color: var(--border-thick); letter-spacing: -0.5px; }
+.header-desc { font-size: 15px; color: var(--text-dim); font-weight: 600; margin-top: 10px; }
+.card {
+  background: var(--card); border: 3px solid var(--border-thick); border-radius: 28px;
+  padding: 28px; margin-bottom: 24px; box-shadow: var(--shadow-bento);
+}
+.card-title { font-size: 18px; font-weight: 900; margin-bottom: 20px; color: var(--border-thick); display: flex; align-items: center; gap: 10px; }
+.profile-row { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; }
+.avatar { width: 56px; height: 56px; border-radius: 16px; border: 2.5px solid var(--border-thick); flex-shrink: 0; overflow: hidden; background: var(--surface); }
+.avatar img { width: 100%; height: 100%; object-fit: cover; }
+.avatar .placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 900; color: var(--border-thick); background: var(--brand-yellow); }
+.profile-name { font-size: 20px; font-weight: 900; color: var(--border-thick); }
+.game-row {
+  display: flex; align-items: center; gap: 14px; padding: 12px 16px;
+  background: #ffffff; border-radius: 18px; margin-bottom: 8px;
+  border: 2.5px solid var(--border-thick);
+}
+.game-icon { width: 36px; height: 36px; border-radius: 10px; border: 2px solid var(--border-thick); flex-shrink: 0; overflow: hidden; }
+.game-icon img { width: 100%; height: 100%; object-fit: cover; }
+.game-name { flex: 1; font-size: 14px; font-weight: 800; color: var(--border-thick); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.game-hours { font-size: 13px; font-weight: 700; color: var(--text-dim); flex-shrink: 0; }
+.config-panel {
+  background: var(--card); border: 3px solid var(--border-thick); border-radius: 28px;
+  padding: 24px; margin-bottom: 24px; box-shadow: var(--shadow-bento);
+}
+.config-row { display: flex; flex-direction: column; gap: 8px; }
+.config-group label { font-size: 14px; font-weight: 900; color: var(--border-thick); }
+.config-group input {
+  width: 100%; padding: 14px 18px; border: 3px solid var(--border-thick); border-radius: 14px;
+  font-size: 15px; font-weight: 700; font-family: inherit;
+}
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 14px 24px; border: 3px solid var(--border-thick); border-radius: 16px;
+  font-size: 15px; font-weight: 900; cursor: pointer; transition: all 0.2s;
+  text-decoration: none;
+}
+.btn-primary { background: var(--brand-primary); color: #fff; box-shadow: var(--shadow-btn); }
+.btn-primary:hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0px var(--border-thick); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+.btn-ghost { background: #fff; color: var(--border-thick); }
+.btn-ghost:hover { background: var(--surface); }
+.btn-full { width: 100%; justify-content: center; }
+.friend-card {
+  background: #ffffff; border: 3px solid var(--border-thick); border-radius: 24px;
+  padding: 22px 26px; display: flex; align-items: center; gap: 22px;
+  box-shadow: 5px 5px 0px var(--border-thick);
+  margin-bottom: 16px;
+}
+.friend-avatar { width: 52px; height: 52px; border-radius: 14px; border: 2.5px solid var(--border-thick); flex-shrink: 0; overflow: hidden; background: var(--surface); }
+.friend-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.friend-avatar .placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 900; color: var(--border-thick); background: var(--brand-yellow); }
+.friend-info { flex: 1; min-width: 0; }
+.friend-name { font-weight: 900; font-size: 17px; color: var(--border-thick); }
+.friend-meta { font-size: 13px; color: var(--text-dim); margin-top: 4px; font-weight: 600; }
+.friend-score-col { text-align: right; flex-shrink: 0; }
+.match-badge {
+  display: inline-block; background: var(--surface); font-size: 13px; font-weight: 700;
+  padding: 6px 14px; border: 2px solid var(--border-thick); border-radius: 100px; margin-top: 6px;
+}
+.score-value { font-size: 24px; font-weight: 950; }
+.score-bar { height: 8px; background: #e2e8f0; border: 2.5px solid var(--border-thick); border-radius: 100px; overflow: hidden; margin-top: 6px; width: 100px; }
+.score-bar-fill { height: 100%; border-radius: 100px; }
+.empty { text-align: center; padding: 60px 20px; }
+.empty p { font-size: 15px; font-weight: 800; color: var(--text-dim); }
+.loading { text-align: center; padding: 40px 20px; }
+.spinner { width: 40px; height: 40px; border: 5px solid #e2e8f0; border-top-color: var(--brand-primary); border-radius: 50%; animation: spin 0.55s linear infinite; margin: 0 auto 16px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading p { font-size: 15px; font-weight: 800; color: var(--border-thick); }
+.error { text-align: center; padding: 28px; color: var(--border-thick); background: #fff5f5; border: 3.5px solid var(--brand-primary); border-radius: 24px; font-weight: 800; }
+.toast {
+  position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+  background: var(--border-thick); color: #fff; font-size: 14px; font-weight: 700;
+  padding: 12px 24px; border-radius: 14px; z-index: 9999;
+  opacity: 0; transition: opacity 0.3s; pointer-events: none;
+}
+.toast.show { opacity: 1; }
+
+@media (max-width: 640px) {
+  .app-container { padding: 24px 16px; }
+  .header h1 { font-size: 24px; }
+  .card { padding: 20px; }
+  .config-panel { padding: 20px; }
+  .friend-card { flex-direction: column; text-align: center; align-items: center; padding: 20px; }
+  .friend-score-col { text-align: center; display: flex; flex-direction: column; align-items: center; }
+  .game-row { padding: 10px 14px; flex-wrap: wrap; gap: 8px; }
+  .card-title { font-size: 16px; }
+  [style*="grid-template-columns: 1fr 1fr"] { grid-template-columns: 1fr !important; }
+}
+</style>
+</head>
+<body>
+<div class="app-container" id="shareApp">
+  <div class="header">
+    <div class="header-badge">SHARE MATCH</div>
+    <h1>Steam 玩伴探测</h1>
+    <div class="header-desc">输入分享码，看看你们有多合拍</div>
+  </div>
+  <div id="shareContent"></div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+window.IS_SHARE_PAGE = true;
+</script>
+<script src="script.js?v=3"></script>
+</body>
+</html>

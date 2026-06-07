@@ -13,6 +13,8 @@ const state = {
   strangersError: null,
   _recruitMode: 'match',
   recentMatchResults: null,
+  gameWeights: {},
+  showWeights: false,
 };
 
 const STRANGER_API_BASE = '';
@@ -49,6 +51,36 @@ function toggleExcluded(appid) {
   return s.has(appid);
 }
 
+function getGameWeight(appid) {
+  if (state.gameWeights[appid] !== undefined) return state.gameWeights[appid];
+  const rank = state.playerTopGames.findIndex(g => g.appid === appid);
+  return rank >= 0 ? Math.max(TOP_N - rank, 1) : 1;
+}
+function setGameWeight(appid, weight) {
+  state.gameWeights[appid] = weight;
+  try { localStorage.setItem('gameWeights', JSON.stringify(state.gameWeights)); } catch {}
+}
+function cleanupGameWeights() {
+  const validAppids = new Set(state.playerGames.map(g => g.appid));
+  let changed = false;
+  for (const k in state.gameWeights) {
+    if (!validAppids.has(+k)) {
+      delete state.gameWeights[k];
+      changed = true;
+    }
+  }
+  if (changed) {
+    try { localStorage.setItem('gameWeights', JSON.stringify(state.gameWeights)); } catch {}
+  }
+}
+function loadGameWeights() {
+  try { state.gameWeights = JSON.parse(localStorage.getItem('gameWeights') || '{}'); } catch { state.gameWeights = {}; }
+  try { state.showWeights = JSON.parse(localStorage.getItem('showWeights') || 'false'); } catch {}
+}
+function weightLabel(w) {
+  return ['', '无关', '次要', '一般', '重要', '核心'][w] || w;
+}
+
 function getCustomGames() {
   try { return JSON.parse(localStorage.getItem('customGames') || '[]'); } catch { return []; }
 }
@@ -81,11 +113,21 @@ function mergeCustomGames(games) {
   });
   return merged;
 }
+function recomputeMatches() {
+  for (const f of state.friendsData) {
+    f.score = computeMatchScore(f.games);
+  }
+  state.friendsData.sort((a, b) => b.score - a.score);
+  renderMatches();
+  if (state.strangersData) renderStrangersResults();
+}
+
 function remergeCustomGames() {
   state.playerGames = mergeCustomGames(state.rawPlayerGames);
   state.playerTopGames = getTopGames(state.playerGames, TOP_N);
+  cleanupGameWeights();
   renderLibrary();
-  renderMatches();
+  if (state.friendsData.length) recomputeMatches();
 }
 
 function showAddGameModal(editAppid) {
@@ -200,9 +242,11 @@ async function apiFetch(endpoint, params) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  if (window.IS_SHARE_PAGE) { initSharePage(); return; }
   // Load saved API key
   const saved = localStorage.getItem('steamApiKey');
   if (saved) document.getElementById('apiKey').value = saved;
+  loadGameWeights();
   // event listeners
   document.getElementById('fetchBtn').addEventListener('click', startFetch);
   document.getElementById('apiToggle').addEventListener('click', () => {
@@ -389,8 +433,7 @@ async function fetchFriendMatches(steamId, apiKey) {
     showProgress(`正在分析好友 ${i+1}/${friendIds.length}: ${summaryMap[fid]?.personaname || fid}...`);
     try {
       const fg = await fetchOwnedGames(fid, apiKey);
-      const shared = state.playerGames.filter(pg => fg.some(fg2 => fg2.appid === pg.appid)).length;
-      const score = computeScore(state.playerTopGames, fg, shared, state.playerGames.length, fg.length);
+      const score = computeMatchScore(fg);
       const fTop5 = getTopGames(fg, TOP_N);
       results.push({
         steamid: fid, summary: summaryMap[fid] || null, games: fg, topGames: fTop5, score,
@@ -428,36 +471,65 @@ async function fetchRecentGames(steamId, apiKey) {
   return (d.response && d.response.games) || [];
 }
 
-function computeScore(myTop5, theirGames, sharedCount, myTotal, theirTotal) {
-  if (!myTop5 || !myTop5.length || !theirGames) return 0;
-  const gMap = {}; (theirGames || []).forEach(g => { gMap[g.appid] = g; });
-  let weightedSum = 0, maxWeight = 0, matched = 0;
-  for (let i = 0; i < myTop5.length; i++) {
-    const pg = myTop5[i];
-    const w = TOP_N - i;
-    maxWeight += w;
-    const tg = gMap[pg.appid];
-    if (!tg) continue;
-    matched++;
-    const pT = pg.playtime_forever || 0;
-    const tT = tg.playtime_forever || 0;
-    const logA = Math.log(pT + 1);
-    const logB = Math.log(tT + 1);
-    const sim = logA + logB > 0 ? 1 - Math.abs(logA - logB) / (logA + logB) : 1;
-    weightedSum += w * sim;
-  }
-  const norm = weightedSum / maxWeight;
-  const matchBonus = matched / TOP_N;
-  let sharedRatio = matchBonus;
-  if (sharedCount !== undefined) {
-    if (myTotal !== undefined && theirTotal !== undefined) {
-      const denom = myTotal + theirTotal - sharedCount;
-      sharedRatio = denom > 0 ? sharedCount / denom : 0;
-    } else {
-      sharedRatio = Math.min(sharedCount / 20, 1.0);
+function computeUnifiedScore(myGames, theirGames, activeCount = 5, noLibrary = false) {
+  if (!myGames || !theirGames || !myGames.length) return 0;
+  const excluded = getExcludedSet();
+  const toHrs = pt => (pt || 0) / 60;
+  const toLog = h => Math.log(h + 1);
+
+  const theirMap = {};
+  for (const g of theirGames) theirMap[g.appid] = toHrs(g.playtime_forever);
+
+  let weightedSimSum = 0, matchedWeight = 0, overlapCount = 0;
+  for (let i = 0; i < myGames.length; i++) {
+    const g = myGames[i];
+    if (excluded.has(g.appid)) continue;
+    const myH = toHrs(g.playtime_forever);
+    if (myH <= 0) continue;
+    const theirH = theirMap[g.appid];
+    if (theirH !== undefined && theirH > 0) {
+      const w = getGameWeight(g.appid);
+      overlapCount++;
+      if (w > 1) {
+        const myL = toLog(myH), theirL = toLog(theirH);
+        const sim = 1 - Math.abs(myL - theirL) / (myL + theirL);
+        weightedSimSum += w * sim;
+        matchedWeight += w;
+      }
     }
   }
-  return Math.min((norm * 0.35 + matchBonus * 0.35 + sharedRatio * 0.30) * 1.3, 1.0);
+
+  const weightedSim = matchedWeight > 0 ? weightedSimSum / matchedWeight : 0;
+  const top5Overlap = overlapCount / activeCount;
+
+  let jaccard = 0;
+  if (!noLibrary && theirGames.length > 0) {
+    const theirSet = new Set(theirGames.map(g => g.appid));
+    let shared = 0, myFilteredTotal = 0;
+    for (const g of state.playerGames) {
+      if (excluded.has(g.appid)) continue;
+      myFilteredTotal++;
+      if (theirSet.has(g.appid)) shared++;
+    }
+    const denom = myFilteredTotal + theirGames.length - shared;
+    if (denom > 0) jaccard = shared / denom;
+  }
+
+  return Math.min(weightedSim * top5Overlap + jaccard, 1.0);
+}
+
+function computeMatchScore(theirGames, opts = {}) {
+  const { noLibrary = false, activeCount = TOP_N } = opts;
+  return computeUnifiedScore(state.playerTopGames, theirGames, activeCount, noLibrary);
+}
+
+function computeRecentMatchScore(myRecent, otherRecent) {
+  const excluded = getExcludedSet();
+  const valid = myRecent
+    .filter(g => (g.playtime_forever || 0) > 0 && !excluded.has(g.appid))
+    .sort((a, b) => b.playtime_forever - a.playtime_forever);
+  const myTopN = valid.slice(0, TOP_N);
+  return computeUnifiedScore(myTopN, otherRecent, Math.min(TOP_N, myTopN.length), true);
 }
 
 function scoreColor(pct) {
@@ -606,18 +678,24 @@ function renderLibrary() {
       <div class="card-title">
         <span>我的 Top ${TOP_N}</span>
         <span style="margin-left:auto;display:flex;gap:12px;align-items:center;">
-          <span class="open-add-game" style="font-size:12px;cursor:pointer;color:var(--brand-secondary);text-decoration:underline dotted;">手动添加</span>
-          <span id="toggleExcludeMode" style="font-size:12px;cursor:pointer;color:var(--text-muted);text-decoration:underline dotted;">排除游戏</span>
+          <span id="createShareCodeBtn" style="font-size:12px;cursor:pointer;color:var(--brand-secondary);text-decoration:underline dotted;">分享码</span>
+          <span class="open-add-game" style="font-size:12px;cursor:pointer;color:var(--brand-success);text-decoration:underline dotted;">手动添加</span>
+          <span id="toggleWeightsBtn" style="font-size:12px;cursor:pointer;color:var(--brand-primary);text-decoration:underline dotted;">权重: ${state.showWeights ? '开' : '关'}</span>
         </span>
       </div>
       ${top5.length ? top5.map((g, i) => {
         const h = Math.round((g.playtime_forever||0)/60);
         const iconUrl = g._custom ? `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${g.appid}/header.jpg` : (g.img_icon_url ? `https://media.steampowered.com/steamcommunity/public/images/apps/${g.appid}/${g.img_icon_url}.jpg` : '');
         const exc = excluded.has(g.appid);
+        const w = getGameWeight(g.appid);
         return `<div class="game-row" style="${exc ? 'opacity:0.4;' : ''}">
           ${iconUrl ? `<div class="game-icon"><img src="${iconUrl}" class="lib-icon" alt=""></div>` : `<div class="game-icon" style="background:var(--surface);display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:12px;font-weight:800;">?</div>`}
           <span style="width:18px;font-size:12px;color:var(--text-muted);font-weight:600;text-align:center;">${i+1}</span>
           <span class="game-name" style="${exc ? 'text-decoration:line-through;' : ''}">${g.name}${customBadge(g)}</span>
+          <div class="weight-control" style="${state.showWeights ? '' : 'display:none;'}">
+            <input type="range" class="game-weight" min="1" max="5" step="1" value="${w}" data-appid="${g.appid}" title="匹配权重: ${weightLabel(w)}">
+            <span class="weight-label" data-appid="${g.appid}">${weightLabel(w)}</span>
+          </div>
           <span style="color:var(--brand-primary);font-weight:600;font-size:13px;">${h}h</span>
           <span class="exclude-btn" data-appid="${g.appid}" style="margin-left:8px;cursor:pointer;font-size:14px;font-weight:800;color:${exc ? 'var(--text-muted)' : 'var(--text-muted)'};">${exc ? '取消排除' : '排除'}</span>
         </div>`;
@@ -654,7 +732,7 @@ function renderLibrary() {
       toggleExcluded(+btn.dataset.appid);
       state.playerTopGames = getTopGames(state.playerGames, TOP_N);
       renderLibrary();
-      renderMatches();
+      if (state.friendsData.length) recomputeMatches();
       switchTab('tab-library');
     });
   });
@@ -663,13 +741,14 @@ function renderLibrary() {
       toggleExcluded(+el.dataset.appid);
       state.playerTopGames = getTopGames(state.playerGames, TOP_N);
       renderLibrary();
-      renderMatches();
+      if (state.friendsData.length) recomputeMatches();
       switchTab('tab-library');
     });
   });
   document.querySelectorAll('.open-add-game').forEach(el => {
     el.addEventListener('click', () => showAddGameModal());
   });
+  document.getElementById('createShareCodeBtn')?.addEventListener('click', createShareCode);
   document.querySelectorAll('.cg-save').forEach(btn => {
     btn.addEventListener('click', () => {
       const appid = +btn.dataset.cgAppid;
@@ -689,6 +768,21 @@ function renderLibrary() {
       remergeCustomGames();
       showToast('已删除');
     });
+  });
+  document.querySelectorAll('input.game-weight').forEach(slider => {
+    slider.addEventListener('input', () => {
+      const appid = +slider.dataset.appid;
+      const w = +slider.value;
+      setGameWeight(appid, w);
+      const label = document.querySelector(`.weight-label[data-appid="${appid}"]`);
+      if (label) label.textContent = weightLabel(w);
+      if (state.friendsData.length) recomputeMatches();
+    });
+  });
+  document.getElementById('toggleWeightsBtn')?.addEventListener('click', () => {
+    state.showWeights = !state.showWeights;
+    try { localStorage.setItem('showWeights', JSON.stringify(state.showWeights)); } catch {}
+    renderLibrary();
   });
 }
 
@@ -938,10 +1032,9 @@ function renderStrangersResults() {
   } else if (!strangers || !strangers.length) {
     el.innerHTML = `<div class="empty"><p>暂无其他玩家开启陌生人匹配</p></div>`;
   } else {
-    const scored = strangers.map(s => {
-      const b = computeStrangerBreakdown(myTop5, s.top5 || [], s.recentTop5);
-      return { ...s, score: b.total, _allTimeScore: b.allTime, _recentScore: b.recent };
-    }).sort((a, b) => b.score - a.score);
+    const scored = strangers.map(s => ({
+      ...s, score: computeUnifiedScore(state.playerGames, s.top5 || [], TOP_N, true)
+    })).sort((a, b) => b.score - a.score);
     const display = scored.slice(0, strangersDisplayCount);
     const hasMore = scored.length > strangersDisplayCount;
     el.innerHTML = `
@@ -1420,9 +1513,6 @@ function renderStrangerCard(person, rank) {
   const pct = (person.score * 100).toFixed(1);
   const name = person.personaname || person.steamid;
   const avatar = person.avatar || '';
-  const allTimePct = person._allTimeScore !== undefined ? (person._allTimeScore * 100).toFixed(1) : null;
-  const recentPct = person._recentScore !== undefined && person._recentScore > 0 ? (person._recentScore * 100).toFixed(1) : null;
-  const breakdown = allTimePct && recentPct ? `<div style="font-size:10px;color:var(--text-dim);margin-top:2px;">历史 ${allTimePct}% · 近期 ${recentPct}%</div>` : '';
   const dot = (person.top5 || []).map(g => {
     const owns = state.playerTopGames.some(pg => pg.appid === g.appid);
     return `<span class="top5-dot ${owns ? 'owned' : 'missing'}" title="${g.name}">${owns ? '✓' : '–'}</span>`;
@@ -1454,25 +1544,15 @@ function showStrangerDetail(steamid) {
   const sTop5 = p.top5 || [];
   const sMap = {}; sTop5.forEach(g => { sMap[g.appid] = g; });
   const matchCount = myTop5.filter(g => sMap[g.appid]).length;
-  const b = computeStrangerBreakdown(myTop5, sTop5, p.recentTop5);
-  const myRecentGames = (state.myRecentGames || [])
-    .filter(g => (g.playtime_2weeks || 0) > 0)
-    .sort((a, b) => (b.playtime_2weeks || 0) - (a.playtime_2weeks || 0))
-    .slice(0, TOP_N);
-  const sRecent = (p.recentTop5 || [])
-    .filter(g => (g.playtime_2weeks || 0) > 0);
-  const sRecentMap = {}; sRecent.forEach(g => { sRecentMap[g.appid] = g; });
-  const recentMatchCount = myRecentGames.length && sRecent.length ? myRecentGames.filter(g => sRecentMap[g.appid]).length : null;
-  const badgeParts = recentMatchCount !== null
-    ? [`Top5 重合 ${matchCount}/${TOP_N}`, `近期Top5 重合 ${recentMatchCount}/${myRecentGames.length}`]
-    : [`Top5 重合 ${matchCount}/${TOP_N}`];
+  const score = computeUnifiedScore(state.playerGames, sTop5, TOP_N, true);
+  const pct = (score * 100).toFixed(1);
   const dc = document.getElementById('detailContent');
   dc.innerHTML = `
     <div class="detail-header">
       <div class="detail-avatar">${avatar ? `<img src="${avatar}" alt="">` : `<div class="placeholder">${name[0]}</div>`}</div>
       <div class="detail-info">
         <h2>${name}</h2>
-        <div class="match-badge">${badgeParts.join(' · ')}</div>
+        <div class="match-badge">Top5 重合 ${matchCount}/${TOP_N} · 匹配 ${pct}%</div>
       </div>
       <button class="btn btn-share" id="addFriendBtn" style="font-size:13px;padding:8px 16px;background:var(--brand-secondary);color:#fff;">添加好友</button>
       <button class="btn btn-ghost" id="backBtn">← 返回</button>
@@ -1506,61 +1586,12 @@ function showStrangerDetail(steamid) {
           </div>`;
         }).join('') : '<div style="color:var(--text-dim);padding:12px;text-align:center;">暂无数据</div>'}
       </div>
-      ${myRecentGames.length && sRecent.length ? `
-      <div class="card">
-        <div class="card-title">双方近期 Top${TOP_N} 时长对比</div>
-        ${myRecentGames.map((g) => {
-          const pT = g.playtime_2weeks || 0;
-          const sT = (sRecentMap[g.appid]?.playtime_2weeks) || 0;
-          const has = sRecentMap[g.appid];
-          return `<div class="game-row">
-            <span style="width:24px;height:24px;border-radius:6px;overflow:hidden;flex-shrink:0;background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:${has ? 'var(--brand-success)' : 'var(--text-muted)'}">${has ? '✓' : '✕'}</span>
-            <span class="game-name">${g.name}</span>
-            <div class="game-hours-compare">
-              <span><span class="hour-dot me"></span>${Math.round(pT / 60)}h</span>
-              <span><span class="hour-dot them"></span>${Math.round(sT / 60)}h</span>
-            </div>
-          </div>`;
-        }).join('')}
-      </div>` : ''}
-      ${sRecent.length ? `
-      <div class="card">
-        <div class="card-title">对方近期 Top${TOP_N}</div>
-        ${sRecent.map((g, i) => {
-          const h = Math.round((g.playtime_2weeks || 0) / 60);
-          const iconUrl = g.img_icon_url ? `https://media.steampowered.com/steamcommunity/public/images/apps/${g.appid}/${g.img_icon_url}.jpg` : '';
-          return `<div class="game-row">
-            ${iconUrl ? `<div class="game-icon"><img src="${iconUrl}" alt="" style="width:100%;height:100%;object-fit:cover;"></div>` : `<div class="game-icon" style="background:var(--surface);display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:10px;font-weight:800;">${i + 1}</div>`}
-            <span class="game-name">${g.name}</span>
-            <span style="color:var(--brand-primary);font-weight:600;font-size:13px;">${h}h</span>
-          </div>`;
-        }).join('')}
-      </div>` : ''}
     </div>
     <div class="card" style="text-align:center;">
       <p style="font-size:14px;color:var(--text-dim);margin-bottom:16px;font-weight:600;">点击下方按钮前往 Steam 添加好友</p>
       <a href="https://steamcommunity.com/profiles/${steamid}" target="_blank" class="btn btn-primary" style="text-decoration:none;display:inline-flex;">前往 Steam 添加好友</a>
     </div>
   `;
-}
-
-function computeStrangerBreakdown(myTop5, strangerTop5, strangerRecent) {
-  const allTime = computeScore(myTop5, strangerTop5);
-  const myRecent = (state.myRecentGames || [])
-    .filter(g => (g.playtime_2weeks || 0) > 0)
-    .sort((a, b) => (b.playtime_2weeks || 0) - (a.playtime_2weeks || 0))
-    .slice(0, TOP_N)
-    .map(g => ({ ...g, playtime_forever: g.playtime_2weeks }));
-  const sRecent = (strangerRecent || [])
-    .filter(g => (g.playtime_2weeks || 0) > 0)
-    .map(g => ({ ...g, playtime_forever: g.playtime_2weeks }));
-  if (!myRecent.length || !sRecent.length) return { total: allTime, allTime, recent: 0 };
-  const recent = computeScore(myRecent, sRecent);
-  return { total: Math.min(allTime * 0.4 + recent * 0.6, 1.0), allTime, recent };
-}
-
-function computeStrangerMatchScore(myTop5, strangerTop5, strangerRecent) {
-  return computeStrangerBreakdown(myTop5, strangerTop5, strangerRecent).total;
 }
 
 let recruitLastPostTime = 0;
@@ -1838,8 +1869,7 @@ async function runRecentMatch(myRecent) {
       try {
         const recent = await fetchRecentGames(f.steamid, state.myApiKey);
         const fRecent = recent.filter(g => (g.playtime_2weeks || 0) > 0).map(g => ({ ...g, playtime_forever: g.playtime_2weeks }));
-        const shared = myRecent.filter(pg => fRecent.some(fg => fg.appid === pg.appid)).length;
-        const score = computeScore(myRecent, fRecent, shared);
+        const score = computeRecentMatchScore(myRecent, fRecent);
         fResults.push({ steamid: f.steamid, name: f.summary?.personaname || f.steamid, avatar: f.summary?.avatarmedium || '', score, games: fRecent, source: '好友' });
       } catch (e) { console.warn(`Recent failed: ${f.steamid}`, e); }
     }
@@ -1853,8 +1883,7 @@ async function runRecentMatch(myRecent) {
       for (const s of state.strangersData) {
         const sRecent = (s.recentTop5 || []).filter(g => (g.playtime_2weeks || 0) > 0).map(g => ({ ...g, playtime_forever: g.playtime_2weeks }));
         if (!sRecent.length) continue;
-        const shared = myRecent.filter(pg => sRecent.some(sg => sg.appid === pg.appid)).length;
-        const score = computeScore(myRecent, sRecent, shared);
+        const score = computeRecentMatchScore(myRecent, sRecent);
         allResults.push({ steamid: s.steamid, name: s.personaname || s.steamid, avatar: s.avatar || '', score, games: sRecent, source: '游戏搭子' });
       }
     }
@@ -1958,6 +1987,236 @@ function showRecentDetail(steamid) {
     <div class="card" style="text-align:center;">
       <p style="font-size:14px;color:var(--text-dim);margin-bottom:16px;font-weight:600;">点击下方按钮前往 Steam 添加好友</p>
       <a href="https://steamcommunity.com/profiles/${steamid}" target="_blank" class="btn btn-primary" style="text-decoration:none;display:inline-flex;">前往 Steam 添加好友</a>
+    </div>
+  `;
+}
+
+// ====== 分享码 (share.html) ======
+
+function initSharePage() {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('code');
+  const el = document.getElementById('shareContent');
+  if (!code) {
+    el.innerHTML = `<div class="card"><div class="empty"><p>缺少分享码，请检查链接</p></div></div>`;
+    return;
+  }
+  fetch(`/api/share/lookup?code=${encodeURIComponent(code)}`)
+    .then(r => r.ok ? r.json() : Promise.reject('Code not found'))
+    .then(data => renderShareLookup(el, data))
+    .catch(() => {
+      el.innerHTML = `<div class="card"><div class="empty"><p>分享码无效或已失效</p></div></div>`;
+    });
+}
+
+function renderShareLookup(container, theirData) {
+  const top5 = theirData.top5 || [];
+  const name = theirData.personaname || '未知玩家';
+  const avatar = theirData.avatar || '';
+  container.innerHTML = `
+    <div class="card">
+      <div class="profile-row">
+        <div class="avatar">${avatar ? `<img src="${avatar}" alt="">` : `<div class="placeholder">${name[0]}</div>`}</div>
+        <div>
+          <div class="profile-name">${name}</div>
+          <div class="match-badge">分享码 · Top5 游戏</div>
+        </div>
+      </div>
+      ${top5.length ? top5.map((g, i) => {
+        const h = Math.round((g.playtime_forever || 0) / 60);
+        const iconUrl = g.img_icon_url ? `https://media.steampowered.com/steamcommunity/public/images/apps/${g.appid}/${g.img_icon_url}.jpg` : '';
+        return `<div class="game-row">
+          ${iconUrl ? `<div class="game-icon"><img src="${iconUrl}" alt=""></div>` : `<div class="game-icon" style="display:flex;align-items:center;justify-content:center;background:var(--surface);font-size:12px;font-weight:800;color:var(--text-muted);">${i+1}</div>`}
+          <span class="game-name">${g.name}</span>
+          <span class="game-hours">${h}h</span>
+        </div>`;
+      }).join('') : '<div style="color:var(--text-dim);text-align:center;padding:12px;">暂无游戏数据</div>'}
+    </div>
+    <div class="config-panel">
+      <div class="config-row">
+        <div class="config-group">
+          <label>你的 Steam ID 或主页链接</label>
+          <input type="text" id="shareSteamId" placeholder="在这里粘贴你的主页链接...">
+        </div>
+        <button class="btn btn-primary btn-full" id="shareStartBtn">开始分析</button>
+      </div>
+    </div>
+    <div id="shareResult"></div>
+  `;
+  document.getElementById('shareStartBtn').addEventListener('click', () => {
+    startShareMatch(theirData);
+  });
+  document.getElementById('shareSteamId').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') startShareMatch(theirData);
+  });
+}
+
+async function createShareCode() {
+  if (!state.mySteamId) { showToast('请先完成扫描'); return; }
+  const btn = document.getElementById('createShareCodeBtn');
+  btn.textContent = '生成中...';
+  try {
+    const recentTop5 = (state.myRecentGames || [])
+      .filter(g => (g.playtime_2weeks || 0) > 0)
+      .sort((a, b) => (b.playtime_2weeks || 0) - (a.playtime_2weeks || 0))
+      .slice(0, TOP_N);
+    const res = await fetch('/api/share/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        steamid: state.mySteamId,
+        personaname: state.myProfile?.personaname || '',
+        avatar: state.myProfile?.avatarfull || state.myProfile?.avatarmedium || '',
+        top5: state.playerTopGames.map(g => ({
+          appid: g.appid, name: g.name,
+          img_icon_url: g.img_icon_url || '',
+          playtime_forever: g.playtime_forever || 0,
+        })),
+        recentTop5: recentTop5.map(g => ({
+          appid: g.appid, name: g.name,
+          img_icon_url: g.img_icon_url || '',
+          playtime_2weeks: g.playtime_2weeks || 0,
+        })),
+      }),
+    });
+    if (!res.ok) throw new Error('创建失败');
+    const { code } = await res.json();
+    const link = `${window.location.origin}/share?code=${code}`;
+    if (navigator.clipboard) {
+      await navigator.clipboard.writeText(link);
+      showToast(`分享码已复制: ${code}`);
+    } else {
+      showToast(`分享码: ${code}`);
+    }
+  } catch (e) {
+    showToast(e.message || '创建分享码失败');
+  } finally {
+    btn.textContent = '分享码';
+  }
+}
+
+async function startShareMatch(theirData) {
+  const input = document.getElementById('shareSteamId').value.trim();
+  if (!input) { showToast('请输入 Steam ID'); return; }
+  const btn = document.getElementById('shareStartBtn');
+  btn.disabled = true;
+  btn.textContent = '分析中...';
+
+  let apiKey = localStorage.getItem('steamApiKey') || '';
+  if (!apiKey) {
+    apiKey = prompt('请先输入你的 Steam API 密钥：');
+    if (!apiKey) { btn.disabled = false; btn.textContent = '开始分析'; return; }
+    localStorage.setItem('steamApiKey', apiKey);
+  }
+
+  try {
+    const steamId = await resolveSteamId(input, apiKey);
+    const resultEl = document.getElementById('shareResult');
+    resultEl.innerHTML = `<div class="loading"><div class="spinner"></div><p>正在拉取游戏数据...</p></div>`;
+
+    const games = await fetchOwnedGames(steamId, apiKey);
+    const myTop5 = getTopGames(games, TOP_N);
+
+    const isSelf = steamId === theirData.steamid;
+    const score = isSelf ? 1.0 : computeUnifiedScore(games, theirData.top5 || [], TOP_N, true);
+    const pct = (score * 100).toFixed(1);
+
+    const shared = (theirData.top5 || []).filter(tg => myTop5.some(mg => mg.appid === tg.appid));
+    const sharedCount = shared.length;
+
+    window._shareMatchData = { myGames: games, myTop5, mySteamId: steamId, theirData, score, pct, shared };
+
+    resultEl.innerHTML = isSelf ? `
+      <div class="card">
+        <div class="card-title">匹配结果</div>
+        <div class="friend-card" style="border-color:var(--brand-success);text-align:center;flex-direction:column;cursor:default;">
+          <div class="friend-info" style="text-align:center;">
+            <div class="friend-name" style="font-size:22px;">这是你自己的分享码</div>
+            <div class="friend-meta" style="color:var(--brand-success);font-weight:800;font-size:15px;">和你的匹配度</div>
+          </div>
+          <div class="friend-score-col">
+            <div class="score-value" style="font-size:36px;">100%</div>
+            <div class="score-bar"><div class="score-bar-fill" style="width:100%;background:var(--brand-success);"></div></div>
+          </div>
+        </div>
+      </div>
+    ` : `
+      <div class="card">
+        <div class="card-title">匹配结果</div>
+        <div class="friend-card" id="shareResultCard" style="cursor:pointer;">
+          <div class="friend-avatar">${theirData.avatar ? `<img src="${theirData.avatar}" alt="">` : `<div class="placeholder">${(theirData.personaname || '?')[0]}</div>`}</div>
+          <div class="friend-info">
+            <div class="friend-name">${theirData.personaname || '未知玩家'} <span style="font-size:11px;color:var(--text-muted);font-weight:600;">点击查看详情</span></div>
+            <div class="friend-meta">Top5 重合 ${sharedCount}/${TOP_N}</div>
+          </div>
+          <div class="friend-score-col">
+            <div class="score-value" style="color:${scoreColor(parseFloat(pct))}">${pct}%</div>
+            <div class="score-bar"><div class="score-bar-fill" style="width:${pct}%;background:${scoreColor(parseFloat(pct))}"></div></div>
+          </div>
+        </div>
+        <div style="margin-top:16px;">
+          <a href="https://steamcommunity.com/profiles/${theirData.steamid}" target="_blank" class="btn btn-primary btn-full" style="text-decoration:none;">前往 Steam 添加好友</a>
+        </div>
+      </div>
+    `;
+    if (!isSelf) document.getElementById('shareResultCard').addEventListener('click', showShareDetail);
+  } catch (e) {
+    showToast(e.message || '分析失败');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '开始分析';
+  }
+}
+
+function showShareDetail() {
+  const d = window._shareMatchData;
+  if (!d) return;
+  const { myTop5, theirData, pct, shared } = d;
+  const name = theirData.personaname || '未知玩家';
+  const avatar = theirData.avatar || '';
+  const theirMap = {}; (theirData.top5 || []).forEach(g => { theirMap[g.appid] = g; });
+  const el = document.getElementById('shareContent');
+  el.innerHTML = `
+    <div class="card">
+      <div class="profile-row">
+        <div class="avatar">${avatar ? `<img src="${avatar}" alt="">` : `<div class="placeholder">${name[0]}</div>`}</div>
+        <div>
+          <div class="profile-name">${name}</div>
+          <div class="match-badge">匹配 ${pct}% · Top5 重合 ${shared.length}/${TOP_N}</div>
+        </div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;">
+      <div class="card">
+        <div class="card-title">我的 Top5</div>
+        ${myTop5.map((g, i) => {
+          const h = Math.round((g.playtime_forever || 0) / 60);
+          const iconUrl = g.img_icon_url ? `https://media.steampowered.com/steamcommunity/public/images/apps/${g.appid}/${g.img_icon_url}.jpg` : '';
+          const has = theirMap[g.appid];
+          return `<div class="game-row" style="${has ? 'border-color:var(--brand-success);' : ''}">
+            ${iconUrl ? `<div class="game-icon"><img src="${iconUrl}" alt=""></div>` : `<div class="game-icon" style="display:flex;align-items:center;justify-content:center;background:var(--surface);font-size:12px;font-weight:800;color:var(--text-muted);">${i+1}</div>`}
+            <span class="game-name">${g.name}</span>
+            <span class="game-hours">${h}h</span>
+          </div>`;
+        }).join('')}
+      </div>
+      <div class="card">
+        <div class="card-title">${name} 的 Top5</div>
+        ${(theirData.top5 || []).map((g, i) => {
+          const h = Math.round((g.playtime_forever || 0) / 60);
+          const iconUrl = g.img_icon_url ? `https://media.steampowered.com/steamcommunity/public/images/apps/${g.appid}/${g.img_icon_url}.jpg` : '';
+          const has = myTop5.some(mg => mg.appid === g.appid);
+          return `<div class="game-row" style="${has ? 'border-color:var(--brand-success);' : ''}">
+            ${iconUrl ? `<div class="game-icon"><img src="${iconUrl}" alt=""></div>` : `<div class="game-icon" style="display:flex;align-items:center;justify-content:center;background:var(--surface);font-size:12px;font-weight:800;color:var(--text-muted);">${i+1}</div>`}
+            <span class="game-name">${g.name}</span>
+            <span class="game-hours">${h}h</span>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
+    <div class="card" style="text-align:center;">
+      <a href="https://steamcommunity.com/profiles/${theirData.steamid}" target="_blank" class="btn btn-primary btn-full" style="text-decoration:none;margin-bottom:12px;">前往 Steam 添加好友</a>
+      <button class="btn btn-ghost btn-full" onclick="initSharePage()" style="background:#fff;border:3px solid var(--border-thick);border-radius:16px;padding:14px;font-weight:900;cursor:pointer;font-size:14px;">← 重新匹配</button>
     </div>
   `;
 }
