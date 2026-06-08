@@ -307,6 +307,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (steamid) window.open(`https://steamcommunity.com/profiles/${steamid}`, '_blank');
     }
   });
+  document.getElementById('contributorsLink')?.addEventListener('click', showContributors);
 });
 
 function steamId2to64(id2) {
@@ -669,7 +670,7 @@ async function generateShareImageForDetail() {
 function getSharedGames(pgs, fgs) {
   const m = {}; (fgs || []).forEach(g => { m[g.appid] = g; });
   return (pgs || []).filter(pg => m[pg.appid]).map(pg => ({
-    appid: pg.appid, name: pg.name, icon: pg.img_icon_url,
+    appid: pg.appid, name: pg.name, icon: pg.img_icon_url || (m[pg.appid] && m[pg.appid].img_icon_url) || '',
     playerHours: pg.playtime_forever || 0, friendHours: m[pg.appid].playtime_forever || 0,
   })).sort((a, b) => (b.playerHours + b.friendHours) - (a.playerHours + a.friendHours));
 }
@@ -692,11 +693,11 @@ function renderLibrary() {
     <div class="card">
       <div class="card-title">
         <span>我的 Top ${TOP_N}</span>
-        <span style="margin-left:auto;display:flex;gap:12px;align-items:center;">
-          <span id="createShareCodeBtn" style="font-size:12px;cursor:pointer;color:var(--brand-secondary);text-decoration:underline dotted;">分享码</span>
-          <span class="open-add-game" style="font-size:12px;cursor:pointer;color:var(--brand-success);text-decoration:underline dotted;">手动添加</span>
-          <span id="toggleWeightsBtn" style="font-size:12px;cursor:pointer;color:var(--brand-primary);text-decoration:underline dotted;">权重: ${state.showWeights ? '开' : '关'}</span>
-        </span>
+        <div class="title-toolbox" style="display:inline-flex;align-items:center;background:var(--surface);border:2.5px solid var(--border-thick);border-radius:14px;padding:4px 6px;margin-left:auto;box-shadow:2px 2px 0px var(--border-thick);vertical-align:middle;gap:4px;font-family:inherit;">
+          <button class="open-add-game" type="button" style="background:transparent;border:2px solid transparent;border-radius:9px;padding:5px 12px;font-size:13px;font-weight:800;color:var(--text);cursor:pointer;transition:all 0.1s cubic-bezier(0.175,0.885,0.32,1);display:inline-flex;align-items:center;gap:4px;outline:none;" onmouseover="this.style.background='#ffffff';this.style.borderColor='var(--border-thick)';this.style.color='var(--brand-success)';this.style.transform='translate(-1px,-1px)';this.style.boxShadow='1.5px 1.5px 0px var(--border-thick)';" onmouseout="this.style.background='transparent';this.style.borderColor='transparent';this.style.color='var(--text)';this.style.transform='none';this.style.boxShadow='none';">添加游戏+</button>
+          <button id="createShareCodeBtn" type="button" style="background:transparent;border:2px solid transparent;border-radius:9px;padding:5px 12px;font-size:13px;font-weight:800;color:var(--text);cursor:pointer;transition:all 0.1s cubic-bezier(0.175,0.885,0.32,1);display:inline-flex;align-items:center;gap:2px;outline:none;" onmouseover="this.style.background='#ffffff';this.style.borderColor='var(--border-thick)';this.style.color='var(--brand-secondary)';this.style.transform='translate(-1px,-1px)';this.style.boxShadow='1.5px 1.5px 0px var(--border-thick)';" onmouseout="this.style.background='transparent';this.style.borderColor='transparent';this.style.color='var(--text)';this.style.transform='none';this.style.boxShadow='none';">分享码</button>
+          <button id="toggleWeightsBtn" type="button" style="border:2px solid var(--border-thick);border-radius:9px;padding:5px 14px;font-size:12px;font-weight:950;letter-spacing:0.3px;cursor:pointer;outline:none;transition:all 0.15s cubic-bezier(0.175,0.885,0.32,1);background:${state.showWeights ? 'var(--brand-primary)' : '#ffffff'};color:${state.showWeights ? '#ffffff' : 'var(--text-dim)'};box-shadow:${state.showWeights ? '2px 2px 0px var(--border-thick)' : '0px 0px 0px var(--border-thick)'};transform:${state.showWeights ? 'translate(-1px,-1px)' : 'none'};" onmouseover="if(!${state.showWeights}){this.style.background='var(--bg)';this.style.transform='translate(-1px,-1px)';this.style.boxShadow='2px 2px 0px var(--border-thick)';}" onmouseout="if(!${state.showWeights}){this.style.background='#ffffff';this.style.transform='none';this.style.boxShadow='0px 0px 0px var(--border-thick)'};">权重</button>
+        </div>
       </div>
       ${top5.length ? top5.map((g, i) => {
         const h = Math.round((g.playtime_forever||0)/60);
@@ -1196,20 +1197,21 @@ async function createRecruitPost() {
     const input = document.getElementById('recruitTeamCustomAppid');
     const extracted = extractAppid(input.value);
     if (!extracted) { showToast('请输入有效的 AppID 或商店 URL'); btn.disabled = false; btn.textContent = '发布招募'; return; }
-    appid = +extracted;
-    if (input.dataset.lookedUpAppid == appid) {
-      gameName = input.dataset.lookedUpName;
-    } else {
-      const info = await lookupGameInfo(appid);
-      if (!info) { showToast('未找到该游戏，请检查 AppID'); btn.disabled = false; btn.textContent = '发布招募'; return; }
-      gameName = info.name;
-    }
+      appid = +extracted;
+      if (input.dataset.lookedUpAppid == appid) {
+        gameName = input.dataset.lookedUpName;
+      } else {
+        const info = await lookupGameInfo(appid);
+        if (!info) { showToast('未找到该游戏，请检查 AppID'); btn.disabled = false; btn.textContent = '发布招募'; return; }
+        gameName = info.name;
+      }
+      gameIcon = `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${appid}/header.jpg`;
   } else {
     appid = parseInt(rawVal);
     const game = state.playerGames.find(g => g.appid === appid);
     if (!game) { showToast('请选择游戏'); btn.disabled = false; btn.textContent = '发布招募'; return; }
     gameName = game.name;
-    gameIcon = game.img_icon_url || '';
+    gameIcon = game._custom ? `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${appid}/header.jpg` : (game.img_icon_url || '');
   }
   const maxMembers = parseInt(document.getElementById('recruitTeamMaxMembers').value) || 4;
   const teamType = document.getElementById('recruitTeamNewTag').checked ? 'new' : '';
@@ -1759,7 +1761,7 @@ function renderWeeklyContent(el, myReport, friendRace, myRecentH, top3, similarF
           const pct = (p.total / maxH) * 100;
           return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;">
             <div style="width:100%;background:var(--brand-primary);border-radius:6px 6px 0 0;border:2px solid var(--border-thick);height:${Math.max(pct, 4)}%;min-height:8px;"></div>
-            <span style="font-size:9px;font-weight:700;color:var(--text-dim);white-space:nowrap;">${p.week.replace('20', '').replace('-W', 'W')}</span>
+            <span style="font-size:9px;font-weight:700;color:var(--text-dim);white-space:nowrap;">${p.week.split('-W')[1]}周</span>
           </div>`;
         }).join('')}
       </div>
@@ -2505,6 +2507,69 @@ async function startShareMatch(theirData) {
     btn.disabled = false;
     btn.textContent = '开始分析';
   }
+}
+
+function showContributors() {
+  const existing = document.getElementById('contributorsOverlay');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'contributorsOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.6);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px;';
+
+  overlay.innerHTML = `
+    <div style="background:#ffffff;border:3.5px solid var(--border-thick);border-radius:32px;padding:36px;max-width:580px;width:100%;max-height:80vh;display:flex;flex-direction:column;box-shadow:var(--shadow-pop);position:relative;animation:popIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;">
+      
+      <div style="position:absolute;top:-14px;right:32px;background:var(--brand-yellow);border:2.5px solid var(--border-thick);color:var(--border-thick);padding:4px 14px;border-radius:100px;font-size:11px;font-weight:950;letter-spacing:0.5px;box-shadow:2px 2px 0px var(--border-thick);transform:rotate(2deg);user-select:none;">
+        THANK YOU
+      </div>
+
+      <h3 style="font-size:24px;font-weight:950;letter-spacing:-0.5px;margin-bottom:6px;color:var(--border-thick);">致谢名单</h3>
+      <p style="font-size:13px;color:var(--text-dim);font-weight:700;margin-bottom:24px;display:flex;align-items:center;gap:6px;">
+        <span>🤝</span> 感谢以下盒友的建议、反馈和无私支持
+      </p>
+      
+      <div id="contributorsList" class="neo-scrollbar" style="overflow-y:auto;background:var(--surface);border:2.5px solid var(--border-thick);border-radius:18px;padding:20px;display:flex;flex-wrap:wrap;gap:8px;content-visibility:auto;">
+        <div style="width:100%;text-align:center;padding:40px 20px;color:var(--text-muted);font-weight:800;font-size:14px;">
+          <div style="width:24px;height:24px;border:3px solid #e2e8f0;border-top-color:var(--brand-primary);border-radius:50%;animation:spin 0.55s linear infinite;margin:0 auto 12px;"></div>
+          正在读取盒友宇宙...
+        </div>
+      </div>
+      
+      <button id="contributorsClose" type="button" style="width:100%;margin-top:24px;padding:16px;font-size:15px;font-weight:950;color:#ffffff;background:var(--border-thick);border:3px solid var(--border-thick);border-radius:16px;cursor:pointer;box-shadow:3px 3px 0px rgba(0,0,0,0.15);transition:all 0.1s cubic-bezier(0.175, 0.885, 0.32, 1);outline:none;" 
+              onmouseover="this.style.transform='translate(-2px, -2px)'; this.style.boxShadow='5px 5px 0px var(--brand-primary)';" 
+              onmouseout="this.style.transform='none'; this.style.boxShadow='3px 3px 0px rgba(0,0,0,0.15)';"
+              onmousedown="this.style.transform='translate(3px, 3px)'; this.style.boxShadow='0px 0px 0px var(--border-thick)';">
+        返回主页
+      </button>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  fetch('contributors.json')
+    .then(r => r.ok ? r.json() : [])
+    .then(names => {
+      const list = document.getElementById('contributorsList');
+      if (!names.length) {
+        list.innerHTML = '<div style="width:100%;text-align:center;padding:40px 20px;color:var(--text-muted);font-weight:800;font-size:14px;">🛸 宇宙深处空无一人</div>';
+        return;
+      }
+      list.innerHTML = names.map(n => `
+        <span style="font-size:12px;font-weight:800;color:var(--text);background:#ffffff;padding:6px 12px;border-radius:10px;border:2px solid var(--border-thick);box-shadow:1.5px 1.5px 0px var(--border-thick);white-space:nowrap;transition:all 0.1s ease;user-select:none;cursor:default;"
+              onmouseover="this.style.transform='translate(-1px, -1px)'; this.style.boxShadow='2.5px 2.5px 0px var(--brand-secondary)'; this.style.background='#f1f5f9';"
+              onmouseout="this.style.transform='none'; this.style.boxShadow='1.5px 1.5px 0px var(--border-thick)'; this.style.background='#ffffff';">
+          ${n}
+        </span>
+      `).join('');
+    })
+    .catch(() => {
+      const list = document.getElementById('contributorsList');
+      list.innerHTML = '<div style="width:100%;text-align:center;padding:40px 20px;color:var(--danger);font-weight:800;font-size:14px;">💥 通信故障（加载失败）</div>';
+    });
+
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+  document.getElementById('contributorsClose').addEventListener('click', () => overlay.remove());
 }
 
 function showShareDetail() {

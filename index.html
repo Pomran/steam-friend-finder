@@ -304,6 +304,7 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .share-section { display: flex; justify-content: center; margin-bottom: 32px; }
@@ -480,8 +481,8 @@ body {
 }
 
 .shared-item .game-icon { width: 38px; height: 38px; border-radius: 10px; border: 2px solid var(--border-thick); }
-.shared-item .game-name { flex: 1; font-size: 15px; font-weight: 800; color: var(--border-thick); }
-.shared-item .game-hours { font-size: 14px; color: var(--text-dim); font-weight: 700; }
+.shared-item .game-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 15px; font-weight: 800; color: var(--border-thick); }
+.shared-item .game-hours { flex-shrink: 0; font-size: 14px; color: var(--text-dim); font-weight: 700; }
 .shared-item .game-hours .my-hours { color: var(--brand-secondary); font-weight: 900; }
 .shared-item .game-hours .friend-hours { color: var(--brand-yellow); font-weight: 900; }
 
@@ -499,6 +500,21 @@ body {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 .loading p { font-size: 18px; font-weight: 900; color: var(--border-thick); }
+
+.neo-scrollbar::-webkit-scrollbar { width: 10px; }
+.neo-scrollbar::-webkit-scrollbar-track {
+  background: var(--surface);
+  border-left: 2px solid var(--border-thick);
+  border-radius: 0 14px 14px 0;
+}
+.neo-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--text-muted);
+  border: 2px solid var(--border-thick);
+  border-radius: 100px;
+}
+.neo-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--brand-purple);
+}
 
 .error {
   text-align: center; padding: 28px;
@@ -758,12 +774,14 @@ body {
 <div class="footer">
   <a href="https://github.com/Pomran/steam-friend-finder" target="_blank">GitHub</a>
   <span class="sep">·</span>
-  基于 MIT 协议开源
+  <span>基于 MIT 协议开源</span>
+  <span class="sep">·</span>
+  <span id="contributorsLink" style="font-size:12px;cursor:pointer;color:var(--text-muted);text-decoration:underline dotted;">致谢</span>
 </div>
 
 <div class="toast" id="toast"></div>
 <script src="html2canvas.min.js"></script>
-<script src="script.js?v=3"></script>
+<script src="script.js?v=4"></script>
 </body>
 </html>
 
