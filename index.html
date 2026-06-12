@@ -501,20 +501,7 @@ body {
 @keyframes spin { to { transform: rotate(360deg); } }
 .loading p { font-size: 18px; font-weight: 900; color: var(--border-thick); }
 
-.neo-scrollbar::-webkit-scrollbar { width: 10px; }
-.neo-scrollbar::-webkit-scrollbar-track {
-  background: var(--surface);
-  border-left: 2px solid var(--border-thick);
-  border-radius: 0 14px 14px 0;
-}
-.neo-scrollbar::-webkit-scrollbar-thumb {
-  background: var(--text-muted);
-  border: 2px solid var(--border-thick);
-  border-radius: 100px;
-}
-.neo-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: var(--brand-purple);
-}
+
 
 .error {
   text-align: center; padding: 28px;
@@ -555,8 +542,8 @@ body {
 .switch {
   position: relative;
   display: inline-block;
-  width: 52px;
-  height: 28px;
+  width: 56px;
+  height: 32px;
   flex-shrink: 0;
 }
 .switch input { opacity: 0; width: 0; height: 0; }
@@ -565,17 +552,17 @@ body {
   cursor: pointer;
   inset: 0;
   background: #cbd5e1;
-  border: 2.5px solid var(--border-thick);
+  border: 4px solid var(--border-thick);
   border-radius: 100px;
   transition: 0.2s;
 }
 .switch-slider::before {
   content: "";
   position: absolute;
-  height: 20px;
-  width: 20px;
-  left: 2px;
-  bottom: 2px;
+  height: 16px;
+  width: 16px;
+  left: 4px;
+  bottom: 4px;
   background: white;
   border: 2px solid var(--border-thick);
   border-radius: 50%;
@@ -585,8 +572,34 @@ body {
   background: var(--brand-success);
 }
 .switch input:checked + .switch-slider::before {
-  transform: translateX(22px);
+  transform: translateX(24px);
 }
+
+.btn-retro-base {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 16px;
+  text-align: center;
+  border: 4px solid var(--border-thick);
+  border-radius: 18px;
+  padding: 16px 20px;
+  box-shadow: 0px 6px 0px 0px var(--border-thick);
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+  cursor: pointer;
+}
+.btn-retro-base:hover {
+  transform: translateY(-2px);
+  box-shadow: 0px 8px 0px 0px var(--border-thick);
+}
+.btn-retro-base:active {
+  transform: translateY(6px);
+  box-shadow: 0px 0px 0px 0px var(--border-thick);
+}
+.btn-retro-red { background: var(--brand-primary); color: #fff; }
+.btn-retro-white { background: #fff; color: var(--border-thick); }
 
 .stranger-badge {
   display: inline-block;

@@ -390,7 +390,7 @@ async function startFetch() {
     // fire-and-forget weekly snapshot (deferred, payload-slimmed)
     setTimeout(() => {
       const payload = state.playerGames
-        .filter(g => (g.playtime_forever || 0) > 0)
+        .filter(g => (g.playtime_forever || 0) > 0 && !g._custom)
         .map(g => ({ appid: g.appid, name: g.name, img_icon_url: g.img_icon_url || '', playtime_forever: g.playtime_forever }));
       if (!payload.length) return;
       fetch('/api/weekly/snapshot', {
@@ -997,6 +997,7 @@ async function callStrangerOptIn(optIn, silent) {
             playtime_2weeks: g.playtime_2weeks || 0,
           })),
         opt_in: optIn,
+        heybox_id: localStorage.getItem('heyboxId') || '',
       }),
     });
     if (!res.ok) {
@@ -1013,16 +1014,30 @@ async function callStrangerOptIn(optIn, silent) {
 function renderStrangersToggle() {
   const el = document.getElementById('strangersContent');
   const optIn = localStorage.getItem('strangerOptIn') === 'true';
+  const isCurrentOn = optIn;
   el.innerHTML = `
-    <div class="card" id="strangerOptInCard">
-      <div class="card-title" style="font-size:16px;">对陌生人开放匹配</div>
-      <div class="stranger-toggle-row">
-        <div class="stranger-toggle-desc">开启后，其他使用本工具的用户将能看到你的 Top5 游戏数据并计算匹配度。你的 Steam ID 和个人资料仅用于展示。</div>
-        <label class="switch">
-          <input type="checkbox" id="strangerToggle" ${optIn ? 'checked' : ''}>
+    <div class="card" id="strangerOptInCard" style="padding:32px 28px;display:flex;flex-direction:column;gap:20px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px;">
+        <div style="display:flex;align-items:center;gap:24px;flex-wrap:wrap;">
+          <h3 style="margin:0;font-size:16px;font-weight:900;white-space:nowrap;color:var(--border-thick);">对陌生人开放匹配</h3>
+          <div style="width:1px;height:18px;background:rgba(17,20,36,0.1);border-radius:2px;flex-shrink:0;margin:0 4px 0 2px;"></div>
+          <div id="heyboxWrapper" style="display:flex;align-items:center;gap:8px;transition:opacity 0.2s, filter 0.2s;opacity:${isCurrentOn ? '1' : '0.35'};filter:${isCurrentOn ? 'none' : 'grayscale(100%)'};">
+            <span style="font-size:12px;font-weight:700;color:#8e95a5;white-space:nowrap;">小黑盒 ID:</span>
+            <input type="text" id="heyboxId"
+              placeholder="输入数字 ID"
+              ${isCurrentOn ? '' : 'disabled'}
+              value="${localStorage.getItem('heyboxId') || ''}"
+               style="padding:5px 12px;border:none;border-radius:10px;font-size:12px;font-weight:700;background:#f4f6f8;outline:none;font-family:inherit;width:130px;cursor:${isCurrentOn ? 'text' : 'not-allowed'};box-sizing:border-box;">
+          </div>
+        </div>
+        <label class="switch" style="flex-shrink:0;">
+          <input type="checkbox" id="strangerToggle" ${isCurrentOn ? 'checked' : ''}>
           <span class="switch-slider"></span>
         </label>
       </div>
+      <p style="font-size:12px;margin:0;color:#8e95a5;font-weight:500;line-height:1.5;">
+        * 开启后，其他使用本工具的用户将能看到你的 Top5 游戏数据并计算匹配度。你的 Steam ID 和个人资料仅用于展示。
+      </p>
     </div>
     <div id="strangerResults"></div>
   `;
@@ -1031,10 +1046,31 @@ function renderStrangersToggle() {
     toggle.addEventListener('change', async (e) => {
       const on = e.target.checked;
       localStorage.setItem('strangerOptIn', on ? 'true' : 'false');
+      const input = document.getElementById('heyboxId');
+      const wrapper = document.getElementById('heyboxWrapper');
+      if (input && wrapper) {
+        input.disabled = !on;
+        input.style.cursor = on ? 'text' : 'not-allowed';
+        wrapper.style.opacity = on ? '1' : '0.35';
+        wrapper.style.filter = on ? 'none' : 'grayscale(100%)';
+      }
       await callStrangerOptIn(on);
       strangersCache.ts = 0;
       loadStrangers(true);
     });
+  }
+  const heyboxInput = document.getElementById('heyboxId');
+  if (heyboxInput) {
+    const saveHeybox = async () => {
+      let val = heyboxInput.value.trim();
+      if (val.includes('profile/')) val = val.split('profile/')[1].split('/')[0].split('?')[0];
+      val = val.replace(/\D/g, '');
+      heyboxInput.value = val;
+      localStorage.setItem('heyboxId', val);
+      const toggleEl = document.getElementById('strangerToggle');
+      if (toggleEl && toggleEl.checked) await callStrangerOptIn(true);
+    };
+    heyboxInput.addEventListener('blur', saveHeybox);
   }
 }
 
@@ -1537,8 +1573,15 @@ function renderStrangerCard(person, rank) {
   return `<div class="friend-card" data-steamid="${person.steamid}" style="animation-delay:${(rank || 0) * 0.04}s;">
     <div class="friend-avatar">${avatar ? `<img src="${avatar}" alt="">` : `<div class="placeholder">${name[0]}</div>`}</div>
     <div class="friend-info">
-      <div class="friend-name">${name} <span class="stranger-badge">陌生人</span></div>
-      <div class="friend-meta" style="margin-top:2px;">Top5 游戏 ${(person.top5 || []).length} 款</div>
+      <div class="friend-name">${name} <span class="stranger-badge">陌生人</span>${person.heybox_id ? `
+          <a href="https://www.xiaoheihe.cn/app/user/profile/${encodeURIComponent(person.heybox_id)}"
+             target="_blank" rel="noopener noreferrer"
+             style="display:inline-flex;align-items:center;background:#222;color:#fff;font-size:10px;font-weight:800;padding:3px 6px;border-radius:6px;text-decoration:none;border:2px solid var(--border-thick);vertical-align:middle;margin-left:4px;">
+             小黑盒
+          </a>` : ''}</div>
+      <div class="friend-meta" style="margin-top:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+        <span>Top5 游戏 ${(person.top5 || []).length} 款</span>
+      </div>
       <div class="top5-dots">${dot}</div>
     </div>
     <div class="friend-score-col">
@@ -1604,9 +1647,16 @@ function showStrangerDetail(steamid) {
         }).join('') : '<div style="color:var(--text-dim);padding:12px;text-align:center;">暂无数据</div>'}
       </div>
     </div>
-    <div class="card" style="text-align:center;">
-      <p style="font-size:14px;color:var(--text-dim);margin-bottom:16px;font-weight:600;">点击下方按钮前往 Steam 添加好友</p>
-      <a href="https://steamcommunity.com/profiles/${steamid}" target="_blank" class="btn btn-primary" style="text-decoration:none;display:inline-flex;">前往 Steam 添加好友</a>
+    <div class="card" style="text-align:center;border-width:4px;">
+      <div style="display:flex;flex-direction:column;gap:16px;width:100%;">
+        <a href="https://steamcommunity.com/profiles/${steamid}" target="_blank" class="btn-retro-base btn-retro-red">前往 Steam 添加好友</a>
+        ${p.heybox_id ? `
+          <a href="https://www.xiaoheihe.cn/app/user/profile/${encodeURIComponent(p.heybox_id)}"
+             target="_blank" rel="noopener noreferrer"
+             class="btn-retro-base btn-retro-white">
+             查看小黑盒主页
+          </a>` : ''}
+      </div>
     </div>
   `;
 }
@@ -1675,7 +1725,9 @@ function renderWeeklyReport(useCache) {
       }
     }
   }
-  const friendTopGames = Object.values(friendGameAgg).sort((a, b) => b.players - a.players).slice(0, 5);
+  const friendTopGames = Object.values(friendGameAgg)
+    .map(g => ({ ...g, score: g.players * Math.log(g.totalHours + 1) }))
+    .sort((a, b) => b.score - a.score).slice(0, 5);
 
   if (useCache && state.weeklyReport !== null) {
     renderWeeklyContent(el, state.weeklyReport, friendRace, myRecentH, top3, similarFriend, friendTopGames);
@@ -1749,19 +1801,22 @@ function renderWeeklyContent(el, myReport, friendRace, myRecentH, top3, similarF
 
   let historyHtml = '';
   if (weeks.length > 1) {
-    const historyPoints = weeks.slice().reverse().map(w => {
+    const sorted = weeks.slice().reverse();
+    const historyPoints = sorted.map((w, i, arr) => {
       const s = JSON.parse(w.snapshot);
-      return { week: w.week, total: Math.round((s.total || 0) / 60) };
+      const cur = Math.round((s.total || 0) / 60);
+      const prev = i > 0 ? Math.round((JSON.parse(sorted[i - 1].snapshot).total || 0) / 60) : cur;
+      return { week: w.week, total: Math.max(cur - prev, 0), isFirst: i === 0 };
     });
     const maxH = Math.max(...historyPoints.map(p => p.total), 1);
     historyHtml = `<div class="card">
       <div class="card-title">近期趋势</div>
       <div style="display:flex;align-items:flex-end;gap:6px;height:80px;padding:8px 0;">
         ${historyPoints.map(p => {
-          const pct = (p.total / maxH) * 100;
+          const barH = Math.max(Math.round((p.total / maxH) * 64), 8);
           return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;">
-            <div style="width:100%;background:var(--brand-primary);border-radius:6px 6px 0 0;border:2px solid var(--border-thick);height:${Math.max(pct, 4)}%;min-height:8px;"></div>
-            <span style="font-size:9px;font-weight:700;color:var(--text-dim);white-space:nowrap;">${p.week.split('-W')[1]}周</span>
+            <div style="width:100%;background:var(--brand-primary);border-radius:6px 6px 0 0;border:2px solid var(--border-thick);height:${barH}px;"></div>
+            <span style="font-size:9px;font-weight:700;color:var(--text-dim);white-space:nowrap;">${p.isFirst ? '基准周' : isoWeekToDateRange(p.week)}</span>
           </div>`;
         }).join('')}
       </div>
@@ -1846,6 +1901,18 @@ function renderWeeklyContent(el, myReport, friendRace, myRecentH, top3, similarF
       <button class="btn btn-ghost" onclick="shareWeeklyReport()" style="font-size:12px;padding:10px 20px;">分享周报</button>
     </div>
   `;
+}
+
+function isoWeekToDateRange(weekStr) {
+  const [year, weekNum] = weekStr.split('-W').map(Number);
+  const jan4 = new Date(year, 0, 4);
+  const dayOffset = (jan4.getDay() + 6) % 7;
+  const jan4Week = Math.ceil(((jan4 - new Date(year, 0, 1)) / 86400000 + jan4.getDay() + 1) / 7);
+  const monday = new Date(year, 0, 1 + (weekNum - jan4Week) * 7 - dayOffset);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  const fmt = d => `${d.getMonth()+1}/${d.getDate()}`;
+  return `${fmt(monday)}-${fmt(sunday)}`;
 }
 
 function computeWeeklyDiffs(currentGames, prevGames) {
@@ -2326,7 +2393,6 @@ function showRecentDetail(steamid) {
       </div>
     </div>
     <div class="card" style="text-align:center;">
-      <p style="font-size:14px;color:var(--text-dim);margin-bottom:16px;font-weight:600;">点击下方按钮前往 Steam 添加好友</p>
       <a href="https://steamcommunity.com/profiles/${steamid}" target="_blank" class="btn btn-primary" style="text-decoration:none;display:inline-flex;">前往 Steam 添加好友</a>
     </div>
   `;
@@ -2529,10 +2595,12 @@ function showContributors() {
         <span>🤝</span> 感谢以下盒友的建议、反馈和无私支持
       </p>
       
-      <div id="contributorsList" class="neo-scrollbar" style="overflow-y:auto;background:var(--surface);border:2.5px solid var(--border-thick);border-radius:18px;padding:20px;display:flex;flex-wrap:wrap;gap:8px;content-visibility:auto;">
-        <div style="width:100%;text-align:center;padding:40px 20px;color:var(--text-muted);font-weight:800;font-size:14px;">
-          <div style="width:24px;height:24px;border:3px solid #e2e8f0;border-top-color:var(--brand-primary);border-radius:50%;animation:spin 0.55s linear infinite;margin:0 auto 12px;"></div>
-          正在读取盒友宇宙...
+      <div style="border:2.5px solid var(--border-thick);border-radius:18px;background:var(--surface);padding:12px 6px 12px 12px;box-sizing:border-box;max-height:420px;overflow:hidden;">
+        <div id="contributorsList" style="overflow-y:auto;max-height:396px;display:flex;flex-wrap:wrap;gap:8px;padding:12px 8px 12px 12px;content-visibility:auto;">
+          <div style="width:100%;text-align:center;padding:40px 20px;color:var(--text-muted);font-weight:800;font-size:14px;">
+            <div style="width:24px;height:24px;border:3px solid #e2e8f0;border-top-color:var(--brand-primary);border-radius:50%;animation:spin 0.55s linear infinite;margin:0 auto 12px;"></div>
+            正在读取盒友宇宙...
+          </div>
         </div>
       </div>
       

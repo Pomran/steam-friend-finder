@@ -16,7 +16,7 @@ export async function onRequest(context) {
     return new Response(JSON.stringify({ error: 'Invalid JSON' }), { status: 400, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
   }
 
-  const { steamid, personaname, avatar, top5, recentTop5, opt_in } = body;
+  const { steamid, personaname, avatar, top5, recentTop5, opt_in, heybox_id } = body;
   if (!steamid) {
     return new Response(JSON.stringify({ error: 'Missing steamid' }), { status: 400, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
   }
@@ -28,16 +28,17 @@ export async function onRequest(context) {
   try {
     if (opt_in) {
       await db.prepare(
-        `INSERT INTO stranger_users (steamid, personaname, avatar, top5_json, recent_top5_json, opt_in, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+        `INSERT INTO stranger_users (steamid, personaname, avatar, top5_json, recent_top5_json, heybox_id, opt_in, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
          ON CONFLICT(steamid) DO UPDATE SET
            personaname = excluded.personaname,
            avatar = excluded.avatar,
            top5_json = excluded.top5_json,
            recent_top5_json = excluded.recent_top5_json,
+           heybox_id = excluded.heybox_id,
            opt_in = 1,
            updated_at = excluded.updated_at`
-      ).bind(steamid, personaname || '', avatar || '', top5Json, recentTop5Json, now, now).run();
+      ).bind(steamid, personaname || '', avatar || '', top5Json, recentTop5Json, heybox_id || '', now, now).run();
     } else {
       await db.prepare(`DELETE FROM stranger_users WHERE steamid = ?`).bind(steamid).run();
     }

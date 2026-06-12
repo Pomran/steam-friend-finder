@@ -16,7 +16,7 @@ export async function onRequest(context) {
 
   try {
     const { results } = await db.prepare(
-      `SELECT steamid, personaname, avatar, top5_json, recent_top5_json FROM stranger_users
+      `SELECT steamid, personaname, avatar, top5_json, recent_top5_json, heybox_id FROM stranger_users
        WHERE opt_in = 1 AND steamid != ?
        ORDER BY updated_at DESC`
     ).bind(steamid).all();
@@ -27,6 +27,7 @@ export async function onRequest(context) {
       avatar: r.avatar,
       top5: safeJsonParse(r.top5_json),
       recentTop5: safeJsonParse(r.recent_top5_json),
+      heybox_id: r.heybox_id || '',
     }));
 
     return new Response(JSON.stringify(parsed), {
