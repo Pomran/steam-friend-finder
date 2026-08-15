@@ -2,9 +2,11 @@
 
 一键扫描你的 Steam 宇宙！通过硬核的数据分析，为你挖掘出藏在列表里、最能跟你玩到一块去的宝藏死党。
 
-🌐 **在线使用**: [https://steam.i-test.top](https://steam.i-test.top)
+🌐 **在线使用**: [https://steam.i-test.top](https://steam.i-test.top) · 发车雷达: [https://steam.i-test.top/play](https://steam.i-test.top/play)
 
 ## 功能
+
+### Steam 玩伴探测
 
 - **游戏库存分析** — 读取 Steam 游戏库，展示 Top5 和全库游戏清单
 - **好友匹配排行** — 遍历好友游戏数据，按统一匹配算法排序
@@ -15,28 +17,41 @@
 - **多格式支持** — 支持 64 位 Steam ID、主页链接、SteamID2/3
 - **权重与排除系统** — 自定义游戏匹配权重（1-5），排除不想参与的游戏
 
-## 发车雷达 `/play`
-
-Steam OpenID 一键登录的极速开黑大厅：
+### 发车雷达 `/play`
 
 - **Steam OpenID 登录** — 手写 OpenID 2.0 校验 + HMAC 签名 Cookie，杜绝假冒 ID
 - **发车大厅** — 创建 / 加入 / 退出 / 解散 / 踢人，一键复制房间码，`steam://` 加好友
-- **入队审批** — 发车可选「需要房主同意」；申请人进入等待列表，房主可同意/拒绝
+- **入队审批** — 发车可选「需要房主同意」；申请人进入等待列表，房主可同意 / 拒绝 / 申请人可取消
 - **智能匹配** — 根据本机正在运行的游戏，一键匹配可加入车队与同游戏在线玩家
 - **本机 Steam 联动** — 读取本机登录账号与当前游戏，自动按游戏筛选车队
 - **共享在线状态** — 开启后站点记录你正在玩的游戏，其他人可按游戏匹配到你
-- **桌面通知** — Web Push 桌面弹窗，上车/入队申请实时提醒
+- **桌面通知** — Web Push 桌面弹窗，上车 / 入队申请 / 审批结果实时提醒
 - **PWA** — 可安装到桌面，Service Worker 处理后台推送
 
-### 本机 Steam 联动安装
+> 未安装扩展的网页用户也可以正常浏览大厅、登录、发车和加入车队；扩展只增强「本机游戏识别」和「智能匹配」。
+
+## 本机联动安装
+
+### 方式一：下载打包好的安装包（推荐）
+
+从 GitHub Release 下载：
+
+```
+https://github.com/Pomran/steam-friend-finder/releases/latest
+```
+
+解压后按包内 `安装说明.txt` 操作即可（已包含编译好的 `host.exe`）。
+
+### 方式二：从源码安装
 
 1. 浏览器扩展页「加载已解压的扩展程序」选择 **`extension` 子文件夹**
 2. 运行 `native-host\install.bat`
 3. 重载扩展，打开 `/play`，右上角状态胶囊显示本机账号与当前游戏
 
-> 卸载：`native-host\uninstall.ps1`。本地读取仅用于展示与匹配，身份校验以 Steam OpenID 为准；macOS 暂未实现。
+> 卸载：扩展管理页移除扩展；运行 `native-host\uninstall.ps1` 移除小助手。  
+> 本地读取仅用于展示与匹配，身份校验以 Steam OpenID 为准；macOS 暂未实现。
 
-### 环境变量
+## 环境变量
 
 | 变量 | 说明 |
 |------|------|
@@ -45,26 +60,25 @@ Steam OpenID 一键登录的极速开黑大厅：
 | `VAPID_PRIVATE_KEY` | Web Push VAPID 私钥 |
 | `SESSION_SECRET` | 会话签名密钥 |
 
-- 本地：写入 `.dev.vars`（已 gitignore）
-- 生产：Cloudflare Pages 后台「Settings → Environment variables」配置
+- 本地开发：写入 `.dev.vars`（已 gitignore）
+- 生产环境：已通过 `wrangler pages secret put` 配置为 Secret
 
-### 本地开发与部署
+## 本地开发与部署
 
 ```bash
 npm run dev      # http://127.0.0.1:8787/play（端口占用会自动 +1）
 npm run deploy   # 部署到 Cloudflare Pages
-node clean-test-data.js   # 清空本地 D1 测试数据
 ```
 
 ## 使用方式
 
 ### 在线使用（推荐）
 
-打开 [https://steam.i-test.top](https://steam.i-test.top)，粘贴 Steam 主页链接即可使用。
+直接打开 [https://steam.i-test.top](https://steam.i-test.top)，粘贴 Steam 主页链接即可使用，无需安装。
 
 ### 浏览器扩展
 
-1. 下载仓库代码
+1. 下载仓库代码或 Release 安装包
 2. `chrome://extensions` 或 `edge://extensions` 开启「开发者模式」
 3. 「加载已解压的扩展程序」选择 **`extension` 子文件夹**
 4. 点击工具栏图标打开 `/play`
