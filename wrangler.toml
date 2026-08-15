@@ -2,10 +2,8 @@ name = "steam-friend-finder"
 pages_build_output_dir = "."
 compatibility_date = "2026-05-01"
 
-# 公开变量（可提交）；敏感变量请用 `wrangler secret put <NAME>` 或本地 .dev.vars 配置：
-#   STEAM_API_KEY / VAPID_PRIVATE_KEY / SESSION_SECRET
-[vars]
-VAPID_PUBLIC_KEY = "BEYqNuqiCeKnLo2JAUMYOCPJFU--Gv1JZfXB0VmrDZa2_RFA9VL9_tjIdMmdf8Y9tetpqu8FzVJA_2-isFT3luE"
+# 生产环境变量已通过 `wrangler pages secret put` 配置为 Secret；
+# 本地开发使用 .dev.vars（已 gitignore）。
 
 [[d1_databases]]
 binding = "steam_strangers"
