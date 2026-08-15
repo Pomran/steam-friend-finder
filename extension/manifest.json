@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "Steam 玩伴探测",
+  "version": "1.1",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAoyxUT6N2hGMv5PwRC7KlqhvQVDYrzlSzCGGaEdlZiM+VfapzgjZKi3pNZs4EIBYIM3CG+Ybf7AbFCQKRLmzh5+sZMUSMeSIRSHA/F90DJv7Ynw/+Fvcz0Qy8FzpVplRdkubkYepQ+iDPC7LaGqqBJs4Jwxn8HIX8a55a/3cjgl67PU5MIxCDlEWOGM4M7UgvOpa6wR24Ne/6GmUG2P3ewJuw6qek2B3D52yIPb6i66G3QLsTtxIPCOjNlO5QreCFWU77rQZZ7UDiskfchM2L4usBTwMXpHOWnn6uRa8dSLjZi4k5ucb5TARewwzUI6NAccc505T9enMcuDdWvXR0MQIDAQAB",
+  "description": "根据 Steam 游戏时长找到合拍好友，并联动本地 Steam 匹配开黑车队",
+  "permissions": ["storage", "nativeMessaging"],
+  "host_permissions": [
+    "https://api.steampowered.com/*",
+    "https://media.steampowered.com/*",
+    "https://steam.i-test.top/*",
+    "http://127.0.0.1/*",
+    "http://localhost/*"
+  ],
+  "action": {
+    "default_title": "Steam 好友匹配器"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://steam.i-test.top/*", "http://127.0.0.1/*", "http://localhost/*"],
+      "js": ["content-bridge.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

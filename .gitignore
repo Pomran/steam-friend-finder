@@ -2,3 +2,7 @@ node_modules/
 .wrangler/
 npm
 wrangler
+.dev.vars
+steam-mvp.json
+native-host/host.exe
+native-host/*.json

@@ -6,76 +6,96 @@
 
 ## 功能
 
-- **游戏库存分析** — 读取你的 Steam 游戏库，分析游戏时长分布，展示 Top5 和全库游戏清单
-- **好友匹配排行** — 遍历所有好友的游戏数据，基于统一匹配算法计算综合分数，按得分排序
-- **陌生人匹配（游戏搭子）** — 开放你的 Top5 数据，和其他使用本工具的用户互相发现
-- **游戏车队招募** — 发布和加入游戏组队招募，按游戏、时长、目标筛选
-- **游戏周报** — 每周自动记录游戏时长快照，对比上周趋势，展示飙升/熄火游戏，好友赛马排行
-- **分享码** — 生成你的 Top5 分享码，发给朋友一键匹配，无需扫描好友
-- **详情对比** — 查看详细的 Top5 时长对比、匹配分维度拆解、共同游戏列表
-- **一键分享** — 生成包含匹配详情的图片，方便保存和分享
-- **多格式支持** — 支持 64 位 Steam ID、完整主页链接、SteamID2、SteamID3 格式
-- **权重系统** — 自定义每款游戏的匹配权重（1-5），精细控制匹配偏好
-- **排除系统** — 排除不想参与匹配/展示的游戏
+- **游戏库存分析** — 读取 Steam 游戏库，展示 Top5 和全库游戏清单
+- **好友匹配排行** — 遍历好友游戏数据，按统一匹配算法排序
+- **陌生人匹配（游戏搭子）** — 开放 Top5 数据，与其他用户互相发现
+- **游戏车队招募** — 发布和加入组队招募，按游戏、时长、目标筛选
+- **游戏周报** — 每周记录游戏时长快照，展示趋势与好友赛马
+- **分享码 / 详情对比 / 一键分享** — 生成 Top5 分享码与匹配详情图片
+- **多格式支持** — 支持 64 位 Steam ID、主页链接、SteamID2/3
+- **权重与排除系统** — 自定义游戏匹配权重（1-5），排除不想参与的游戏
+
+## 发车雷达 `/play`
+
+Steam OpenID 一键登录的极速开黑大厅：
+
+- **Steam OpenID 登录** — 手写 OpenID 2.0 校验 + HMAC 签名 Cookie，杜绝假冒 ID
+- **发车大厅** — 创建 / 加入 / 退出 / 解散 / 踢人，一键复制房间码，`steam://` 加好友
+- **入队审批** — 发车可选「需要房主同意」；申请人进入等待列表，房主可同意/拒绝
+- **智能匹配** — 根据本机正在运行的游戏，一键匹配可加入车队与同游戏在线玩家
+- **本机 Steam 联动** — 读取本机登录账号与当前游戏，自动按游戏筛选车队
+- **共享在线状态** — 开启后站点记录你正在玩的游戏，其他人可按游戏匹配到你
+- **桌面通知** — Web Push 桌面弹窗，上车/入队申请实时提醒
+- **PWA** — 可安装到桌面，Service Worker 处理后台推送
+
+### 本机 Steam 联动安装
+
+1. 浏览器扩展页「加载已解压的扩展程序」选择 **`extension` 子文件夹**
+2. 运行 `native-host\install.bat`
+3. 重载扩展，打开 `/play`，右上角状态胶囊显示本机账号与当前游戏
+
+> 卸载：`native-host\uninstall.ps1`。本地读取仅用于展示与匹配，身份校验以 Steam OpenID 为准；macOS 暂未实现。
+
+### 环境变量
+
+| 变量 | 说明 |
+|------|------|
+| `STEAM_API_KEY` | Steam Web API Key（登录后拉取昵称/头像） |
+| `VAPID_PUBLIC_KEY` | Web Push VAPID 公钥 |
+| `VAPID_PRIVATE_KEY` | Web Push VAPID 私钥 |
+| `SESSION_SECRET` | 会话签名密钥 |
+
+- 本地：写入 `.dev.vars`（已 gitignore）
+- 生产：Cloudflare Pages 后台「Settings → Environment variables」配置
+
+### 本地开发与部署
+
+```bash
+npm run dev      # http://127.0.0.1:8787/play（端口占用会自动 +1）
+npm run deploy   # 部署到 Cloudflare Pages
+node clean-test-data.js   # 清空本地 D1 测试数据
+```
 
 ## 使用方式
 
 ### 在线使用（推荐）
 
-直接打开 [https://steam.i-test.top](https://steam.i-test.top)，粘贴 Steam 主页链接即可使用，无需安装。
+打开 [https://steam.i-test.top](https://steam.i-test.top)，粘贴 Steam 主页链接即可使用。
 
 ### 浏览器扩展
 
-1. 下载本仓库代码（Clone 或 Download ZIP）
-2. 打开浏览器扩展管理页面（Chrome 输入 `chrome://extensions`，Edge 输入 `edge://extensions`）
-3. 开启右上角「开发者模式」
-4. 点击「加载已解压的扩展程序」，选择项目文件夹
-5. 安装完成，点击工具栏图标即可使用
-
-## 使用方法
-
-1. 打开你的 [Steam 个人主页](https://steamcommunity.com/my/profile)
-2. 复制地址栏链接，粘贴到输入框中
-3. 点击「开始扫描」
-4. 等待分析完成，即可查看结果
+1. 下载仓库代码
+2. `chrome://extensions` 或 `edge://extensions` 开启「开发者模式」
+3. 「加载已解压的扩展程序」选择 **`extension` 子文件夹**
+4. 点击工具栏图标打开 `/play`
 
 ## 匹配算法
 
-统一匹配分数由三个子项组成：
-
-| 维度 | 说明 |
-|------|------|
-| 加权时长相似度 | Top5 游戏的对数时长比相似度，按用户自定义权重加权（默认中性） |
-| Top5 命中率 | 对方 Top5 中有多少款你也在玩，衡量游戏偏好重合度 |
-| 库 Jaccard 相似度 | 双方整个游戏库的重叠比例，衡量游戏品味广度 |
-
-权重系统支持 1-5 级自定义，默认中性（3），设为 1 完全排除出时长加权。
+统一匹配分数 = 加权时长相似度 × Top5 命中率 + 库 Jaccard 相似度。权重 1-5 级可调，默认 3。
 
 ## 周报系统
 
-基于 D1 数据库的每周游戏时长快照，被动触发（扫描时自动记录）：
-
-- **本周飙升/熄火** — 对比上周快照，计算每款游戏时长变化
-- **好友赛马** — 按 `playtime_2weeks` 排序好友本周活跃度
-- **本周 TOP3** — 好友中本周最热门的游戏排行
-- **和你最像的人** — 按共同活跃游戏找出匹配度最高的好友
-- **连续活跃周数** — 记录连续使用周数
-- **一周一图** — 生成周报分享图片
+基于 D1 的每周时长快照，扫描时自动记录：本周飙升/熄火、好友赛马、本周 TOP3、和你最像的人、连续活跃周数、一周一图。
 
 ## 技术说明
 
-- **前端**: 纯静态页面，部署于 Cloudflare Pages
-- **后端**: Cloudflare Workers + D1 数据库（存储陌生人数据、招募帖、分享码、周报快照）
-- **代理**: Cloudflare Worker 转发 Steam API 请求，解决跨域和网络问题
-- **扩展**: Manifest V3 浏览器扩展，支持 Chrome / Edge
+- **前端**: 纯静态页面，Cloudflare Pages 部署
+- **后端**: Cloudflare Functions + D1（用户、招募、分享码、周报、发车、在线状态、推送配置）
+- **首屏优化**: `/api/bootstrap` 合并 me/lobby/presence；分级轮询（lobby 90s、presence 180s），后台停止、回前台刷新
+- **代理**: `/proxy` 转发 Steam API 请求
+- **扩展**: Manifest V3（`extension/`），支持 Chrome / Edge
+- **本机助手**: Native Messaging Host（`native-host/`），读取本机 Steam 状态
 
 ## 架构
 
 ```
 用户 → https://steam.i-test.top (Cloudflare Pages)
-                  ↓
-        /proxy → Steam API (Cloudflare Worker 代理)
-        /api/*  → D1 Database (Cloudflare Worker + D1)
+          ├─ /           玩伴探测主页
+          ├─ /play       发车雷达大厅
+          ├─ /proxy      Steam API 代理
+          └─ /api/*      D1 Database (Cloudflare Functions)
+
+本机 Steam → native-host\host.exe → 扩展 background → 内容脚本 → /play 页面
 ```
 
 ## 开源协议

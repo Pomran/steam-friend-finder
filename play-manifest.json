@@ -1,0 +1,13 @@
+{
+  "name": "Steam 极速发车雷达",
+  "short_name": "Steam发车",
+  "start_url": "/play",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f4f7fc",
+  "theme_color": "#ffffff",
+  "icons": [
+    { "src": "/icons/icon48.png", "sizes": "48x48", "type": "image/png" },
+    { "src": "/icons/icon128.png", "sizes": "128x128", "type": "image/png" }
+  ]
+}

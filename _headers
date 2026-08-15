@@ -13,3 +13,13 @@
   Cache-Control: no-cache, must-revalidate
 /script.js
   Cache-Control: no-cache, must-revalidate
+/play
+  Cache-Control: no-cache, must-revalidate
+/play.html
+  Cache-Control: no-cache, must-revalidate
+/play.js
+  Cache-Control: no-cache, must-revalidate
+/play-sw.js
+  Cache-Control: no-cache, must-revalidate
+/play-manifest.json
+  Cache-Control: no-cache, must-revalidate
