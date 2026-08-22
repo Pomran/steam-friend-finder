@@ -311,7 +311,7 @@ async function openRoomDetail(id) {
           <span class="m-name">${escapeHtml(p.nickname || p.steamId)}${p.steamId === lobby.host.steamId ? ' (房主)' : ''}</span>
           <div class="member-actions">
             ${isHost && p.steamId !== currentUser.steamId ? `<button onclick="kickPlayer('${lobby.id}','${p.steamId}')" class="btn-tiny danger">移除</button>` : ''}
-            <a href="steam://friends/add/${p.steamId}" class="btn-tiny">加好友</a>
+            <a href="https://steamcommunity.com/profiles/${p.steamId}" target="_blank" class="btn-tiny">加好友</a>
           </div>
         </div>`).join('')}
     </div>
@@ -466,7 +466,7 @@ function renderMatchResult(gameName, appid, lobbies, players) {
       <span class="online-chip">
         ${p.avatar ? `<img src="${escapeHtml(p.avatar)}" alt="">` : ''}
         <span class="chip-name">${escapeHtml(p.nickname || p.steamId)}</span>
-        <a href="steam://friends/add/${escapeHtml(p.steamId)}" class="btn-tiny" title="Steam 加好友">加好友</a>
+        <a href="https://steamcommunity.com/profiles/${escapeHtml(p.steamId)}" target="_blank" class="btn-tiny" title="Steam 加好友">加好友</a>
       </span>`).join('') + `</div>`;
   }
 
@@ -722,7 +722,7 @@ function renderOnlineSection() {
         ${p.avatar ? `<img src="${escapeHtml(p.avatar)}" alt="">` : ''}
         <span class="chip-name">${escapeHtml(p.nickname || p.steamId)}</span>
         ${p.gameName ? `<span class="chip-game">${escapeHtml(p.gameName)}</span>` : ''}
-        <a href="steam://friends/add/${escapeHtml(p.steamId)}" class="btn-tiny" title="Steam 加好友">加好友</a>
+        <a href="https://steamcommunity.com/profiles/${escapeHtml(p.steamId)}" target="_blank" class="btn-tiny" title="Steam 加好友">加好友</a>
       </span>`).join('') + '</div>';
   }
   el.innerHTML = html;
